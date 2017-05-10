@@ -1,0 +1,145 @@
+global proc int ccgSE_IblFuncSet()
+{
+  int $i,$j,$k,$m,$n;
+  string $nonDeletable[];
+  
+  int $iblMode = `optionMenuGrp -q -sl ccgSE_IC_option1`;
+  
+  if($iblMode==1)
+  {
+    if(`objExists mentalrayGlobals` && `attributeExists "imageBasedLighting" mentalrayGlobals`)
+    {
+      string $source[1] = `listConnections -d 0 -s 1 -p 1 -scn 1 mentalrayGlobals.imageBasedLighting`;
+      string $tmp[];
+      tokenize $source[0] "." $tmp;
+      if($tmp[0]!="" && $tmp[0]!="ccgIblEnvBallShape")
+      {
+        string $answer = `confirmDialog -t "Confirm" -m ("There is already a mentalrayIbl node named \'"+$tmp[0]+"\' connected to mentalrayGlobals, you can use this one as environment for Ccg shaders.") -b "Who care, delete it and create new" -b "Wait a minute, just break the connections and create new" -b "Use this exist one" -db "Wait a minute, just break the connections and create new" -cb "Use this exist one" -ds "Use this exist one"`;
+        if($answer=="Who care, delete it and create new")
+        {
+          if(`objExists $tmp[0]`)
+          {
+            string $deletes[] = `listConnections -d 0 -s 1 -scn 1 $tmp[0]`;
+            string $parent[1] = `listRelatives -p -type transform $tmp[0]`;
+            $j=size($deletes);
+            if(`objExists $tmp[0]`) if(catch(`delete $tmp[0]`)) {select $tmp[0]; warning ($tmp[0]+" can't be deleted!"); return 0;}
+            if(`objExists $parent[0]`) delete $parent[0];
+            for($i=0,$k=0;$i<$j;$i++) if(`objExists $deletes[$i]`){ if(catch(`delete $deletes[$i]`)){$nonDeletable[$k]=$deletes[$i];$k++;}}
+            if($k>0)
+            {
+              print "The following nodes can't be deleted: \n";
+              for($i=0;$i<$k;$i++) print $nonDeletable[$i];
+            }
+          }
+        }else if($answer=="Wait a minute, just break the connections and create new")
+              {
+                if(catch(`disconnectAttr $source[0] mentalrayGlobals.imageBasedLighting`)) {
+                  select $tmp[0];
+                  warning ("Can't disconnect "+$tmp[0]+" with mentalrayGlobals.imageBasedLighting!\n");
+                  return 0;
+                }
+              }else if($answer=="Use this exist one")
+                    {
+                      select $tmp[0];
+                      return 1;
+                    }
+      }
+      
+      if(`objExists ccgIblEnvBall`) delete ccgIblEnvBall;
+      if(`objExists ccgIblEnvBallShape`) delete ccgIblEnvBallShape;
+      group -em -n ccgIblEnvBall;
+      createNode mentalrayIblShape -p ccgIblEnvBall -n ccgIblEnvBallShape;
+      setAttr ccgIblEnvBallShape.hardwareAlpha 1;
+      setAttr ccgIblEnvBallShape.visibleInEnvironment 1;
+      setAttr ccgIblEnvBall.scale 100 100 100;
+      connectAttr -f ccgIblEnvBallShape.message mentalrayGlobals.imageBasedLighting;
+      return 1;
+    }else {warning "Please select mentalray render firstly!"; return 0;}
+  }else if($iblMode==2)
+        {
+          string $listIblGeo[] = `ls -type ccg_geo_ibl`;
+          if(size($listIblGeo)>1 || (size($listIblGeo)==1&&$listIblGeo[0]!="ccgIblGeoShader"))
+          {
+            warning "One or more ccg_geo_ibl node exist, Automatically building failed!";
+            return 0;
+          }
+          if(!`objExists ccgIblGeoInst`) polyCube -ch 0 -n ccgIblGeoInst;
+          setAttr "ccgIblGeoInst.lodVisibility" 0;
+          setAttr "ccgIblGeoInstShape.doubleSided" 0;
+          setAttr "ccgIblGeoInstShape.visibleInRefractions" 0;
+          setAttr "ccgIblGeoInstShape.visibleInReflections" 0;
+          setAttr "ccgIblGeoInstShape.smoothShading" 0;
+          setAttr "ccgIblGeoInstShape.primaryVisibility" 0;
+          setAttr "ccgIblGeoInstShape.motionBlur" 0;
+          setAttr "ccgIblGeoInstShape.receiveShadows" 0;
+          setAttr "ccgIblGeoInstShape.castsShadows" 0;
+          setAttr "ccgIblGeoInst.miExportGeoShader" 1;
+          if(!`objExists ccgIblGeoShader`) createNode ccg_geo_ibl -n ccgIblGeoShader;
+          if(!`isConnected -iuc ccgIblGeoShader.message ccgIblGeoInst.miGeoShader`)
+            connectAttr -f ccgIblGeoShader.message ccgIblGeoInst.miGeoShader;
+          if(!`objExists ccgIblGeoPreview`) sphere -p 0 0 0 -ax 0 1 0 -ch 1 -n ccgIblGeoPreview;
+          setAttr "ccgIblGeoPreview.castsShadows" 0;
+          setAttr "ccgIblGeoPreview.receiveShadows" 0;
+          setAttr "ccgIblGeoPreview.motionBlur" 0;
+          setAttr "ccgIblGeoPreview.primaryVisibility" 0;
+          setAttr "ccgIblGeoPreview.smoothShading" 0;
+          setAttr "ccgIblGeoPreview.visibleInReflections" 0;
+          setAttr "ccgIblGeoPreview.visibleInRefractions" 0;
+          setAttr "ccgIblGeoPreview.scale" 100 100 100;
+          string $previewSource[] = `listConnections -d 0 -s 1 -scn 1 ccgIblGeoPreviewShape.create`;
+          if(size($previewSource)==0 || `nodeType $previewSource[0]`!="reverseSurface"){
+            string $reverseNode[] = `reverseSurface -d 3 -ch 1 -rpo 1 "ccgIblGeoPreview"`;
+            setAttr ($reverseNode[1]+".direction") 3;
+            scriptJob -ac ($reverseNode[1]+".direction") ("int $sel=`getAttr "+$reverseNode[1]+".direction`;setAttr ccgIblGeoShader.tex_changeUV ($sel+1)");
+          }
+          if(`attributeExists "rotate" ccgIblGeoShader` && !`isConnected -iuc "ccgIblGeoPreview.rotate" "ccgIblGeoShader.rotate"`)
+            connectAttr -f "ccgIblGeoPreview.rotate" "ccgIblGeoShader.rotate";
+          if(`attributeExists "tex_rotate" ccgIblGeoShader` && !`isConnected -iuc "ccgIblGeoPreview.rotate" "ccgIblGeoShader.tex_rotate"`)
+            connectAttr -f "ccgIblGeoPreview.rotate" "ccgIblGeoShader.tex_rotate";
+          return 1;
+        }
+  return 0;
+}
+
+global proc ccgSE_IblFuncDelete()
+{
+  int $iblMode = `optionMenuGrp -q -sl ccgSE_IC_option1`;
+  if($iblMode==1)
+  {
+    if(`objExists ccgIblEnvBall`) delete ccgIblEnvBall;
+    if(`objExists ccgIblEnvBallShape`) delete ccgIblEnvBallShape;
+  }else if($iblMode==2)
+        {
+          if(`objExists ccgIblGeoShader`)
+          {
+            string $connections[] = `listConnections -d 0 -s 1 -p 1 -scn 1 ccgIblGeoShader`;
+            int $num = size($connections);
+            int $i,$j;
+            string $removes[];
+            for($i=0,$j=0;$i<$num;$i++)
+            {
+              if(!`gmatch $connections[$i] "*ccgIblGeoPreview*"`)
+              {
+                $removes[$j] = $connections[$i];
+                $j++;
+              }
+            }
+            for($i=0;$i<$j;$i++) delete $removes[$i];
+            delete ccgIblGeoShader;
+          }
+          if(`objExists ccgIblGeoPreview`) delete ccgIblGeoPreview;
+          if(`objExists ccgIblGeoInst`) delete ccgIblGeoInst;
+        }
+}
+
+global proc ccgSE_IblFuncSelect()
+{
+  int $iblMode = `optionMenuGrp -q -sl ccgSE_IC_option1`;
+  if($iblMode==1)
+  {
+    if(`objExists ccgIblEnvBallShape`) select ccgIblEnvBallShape;
+  }else if($iblMode==2)
+        {
+          if(`objExists ccgIblGeoShader`) select ccgIblGeoShader;
+        } 
+}

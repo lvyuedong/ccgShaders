@@ -1,0 +1,36 @@
+
+global proc AEccg_base_surfaceTemplate ( string $nodeName ) 
+{ 
+	AEswatchDisplay $nodeName; 
+
+	editorTemplate -beginScrollLayout;
+
+	editorTemplate -beginLayout "Surface Shader Attributes" -collapse 0; 
+		editorTemplate -label "Color" -addControl "color";
+		editorTemplate -label "Transparency" -addControl "transparency";
+		editorTemplate -label "Matte Opacity" -addControl "matteOpacity";
+	editorTemplate -endLayout; 
+	
+	editorTemplate -beginLayout "Render Layers Control" -collapse 1; 
+		editorTemplate -label "Depth Limit Min" -addControl "depthLimitMin";
+		editorTemplate -label "Depth Limit Max" -addControl "depthLimitMax";
+		editorTemplate -label "Layer" -addControl "layer";
+		editorTemplate -label "Output All Layers" -addControl "passesInOnce";
+		editorTemplate -label "fbWriteString" -addControl "fbWriteString"; 
+	editorTemplate -endLayout; 
+
+	editorTemplate -beginLayout "Shadow Trace Function" -collapse 1; 
+		editorTemplate -io -ann "Enable if shaders are hidden behind the ccg_base_mix20layers" -label "Disable Shadow Chain" -addControl "disableShadowChain";
+	editorTemplate -endLayout; 
+	
+	editorTemplate -beginLayout "Hardware Texturing" -collapse 1; 
+		string $attrTokens = "color";
+		AEhardwareTextureTemplate($nodeName, $attrTokens);
+	editorTemplate -endLayout;
+	
+	AEdependNodeTemplate $nodeName;
+	editorTemplate -addExtraControls;
+
+	editorTemplate -endScrollLayout; 
+} 
+

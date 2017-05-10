@@ -1,0 +1,446 @@
+source "ccgSE_common_func";
+source "ccgSE_misss_fast_skin_maya_convert";
+source "ccgSE_misss_fast_simple_maya_convert";
+source "ccgSE_mi_car_paint_phen_convert";
+source "ccgSE_mia_material_x_convert";
+source "ccgSE_IBL_func";
+source "ccgSE_IMC_func";
+source "ccgSE_IBL_AdvWindow";
+
+global proc string[] ccgSE_register_type()
+{
+  string $result[] = {
+    //add register type here
+    "misss_fast_skin_maya",
+    "misss_fast_simple_maya",
+    "mi_car_paint_phen",
+    "mia_material_x"
+  };
+  return $result;
+}
+
+global proc string[] ccgSE_shader_type_require()
+{
+  string $result[];
+  int $type = `optionMenuGrp -q -sl ccgSE_SC_option1`;
+  
+  switch($type)
+  {
+    case 1: $result = ccgSE_register_type();
+    case 2: $result[0] = "misss_fast_skin_maya";
+            break;
+    case 3: $result[0] = "misss_fast_simple_maya";
+            break;
+    case 4: $result[0] = "mi_car_paint_phen";
+            break;
+    case 5: $result[0] = "mia_material_x";
+            break;
+    default: $result = ccgSE_register_type();
+  }
+  
+  return $result;
+}
+
+global proc int ccgSE_convert(int $button)
+{
+  global string $gCcgSE_Convertions[];
+  global string $gCcgSE_currentTemplate;
+  clear $gCcgSE_Convertions;
+  $gCcgSE_currentTemplate = "";
+  
+  int $i,$j,$n,$o,$typeNum,$selNum;
+  string $shaderType[] = ccgSE_shader_type_require();
+  $typeNum = size($shaderType);
+  int $mode = `radioButtonGrp -q -sl ccgSE_SC_radiobuttongrp1`;
+  int $autoAssign = `checkBoxGrp -q -v1 ccgSE_SC_checkbox1`;
+  int $status;
+  string $badShaders[], $goodShaders[];
+  string $sel[];
+  
+  if($button==1)
+  {
+    $sel = `ls -sl`;
+  }else if($button==2)
+        {
+          for($i=0,$j=0;$i<$typeNum;$i++)
+          {
+            string $lists[] = `ls -type $shaderType[$i]`;
+            int $listsNum = size($lists);
+            for($n=0;$n<$listsNum;$n++)
+            {
+              $sel[$j] = $lists[$n];
+              $j++;
+            }
+          }
+        }
+
+  $selNum = size($sel);
+  if($selNum<=0) return 0;
+
+  for($i=0,$n=0,$o=0;$i<$selNum;$i++)
+  {
+    for($j=0;$j<$typeNum;$j++)
+    {
+      string $selShadingEngine;
+      if(`objExists $sel[$i]`) $selShadingEngine = ccgSE_find_shadingEngine($sel[$i]);
+      else $selShadingEngine = "NULL";
+      
+      if($selShadingEngine!="NULL" && $selShadingEngine!="DANGER" && `objExists $sel[$i]` && `nodeType $sel[$i]`==$shaderType[$j])
+      {
+          //query the assigned material engine sets
+          string $assigned_sets[];
+          if($autoAssign){
+              string $assigned_shader="";
+              string $selTemplates[] = `listConnections -d 1 -s 0 -scn 1 -type "ccg_base_template" $sel[$i]`;
+              string $selTemplatesx[] = `listConnections -d 1 -s 0 -scn 1 -type "ccg_base_template_x" $sel[$i]`;
+              string $selCon[] = stringArrayCatenate($selTemplates, $selTemplatesx);
+              $selCon = stringArrayRemoveDuplicates($selCon);
+              if(size($selCon)){
+                int $p;
+                for($p=0;$p<size($selCon);$p++){
+                  if(`attributeExists "convert_from" $selCon[$p]`){
+                    string $assigned = `getAttr ($selCon[$p]+".convert_from")`;
+                    if(`gmatch $assigned "*:assigned*"`){
+                      $assigned_shader = $selCon[$p];
+                      $assigned = `substitute ":assigned" $assigned ""`;
+                      setAttr -type "string" ($selCon[$p]+".convert_from") $assigned; 
+                      break;
+                    }
+                  }
+                }
+              }
+              if($assigned_shader=="") $assigned_shader = $sel[$i];
+              $assigned_engine = ccgSE_find_shadingEngine($assigned_shader);
+              $assigned_sets = `sets -q $assigned_engine`;
+          }
+          //convert
+          string $cmd = "ccgSE_"+$shaderType[$j]+"_convert(\""+$sel[$i]+"\", "+$mode+");";
+          $status = eval($cmd);
+          if(!$status){
+            $badShaders[$n] = $sel[$i];
+            $n++;
+          }else {
+                  $goodShaders[$o] = $sel[$i];
+                  $o++;
+                  if($autoAssign){
+                      string $templateEngine = ccgSE_find_shadingEngine($gCcgSE_currentTemplate);
+                      if($templateEngine!="NULL"&&$templateEngine!="DANGER" && size($assigned_sets)){
+                        sets -e -fe $templateEngine $assigned_sets;
+                        if(`attributeExists "convert_from" $gCcgSE_currentTemplate`){
+                          string $getType = `getAttr ($gCcgSE_currentTemplate+".convert_from")`;
+                          if(!`gmatch $getType "*:assigned*"`) $getType += ":assigned";
+                          setAttr -type "string" ($gCcgSE_currentTemplate+".convert_from") $getType;
+                        }
+                      }
+                  }
+                }
+          break;
+      }
+    }
+  }
+  $n = size($gCcgSE_Convertions);
+  if($n<=0) return 0;
+  print "*********************************************************\n";
+  print "The following shaders had been converted successfully:\n";
+  for($i=0;$i<$n;$i++)
+  {
+    print ("\""+$goodShaders[$i]+"\" to \""+$gCcgSE_Convertions[$i]+"\"\n");
+  }
+  print "*********************************************************\n";
+  $n = size($badShaders);
+  if($n)
+  {
+    print "The following shaders can't be converted, check warning info provided by progress before:\n";
+    for($i=0;$i<$n;$i++)
+      print ($badShaders[$i]+"\n");
+  }
+  print "*********************************************************\n";
+  return 1;
+}
+
+global proc ccgSE_select_conversions()
+{
+  string $shaderType[] = ccgSE_shader_type_require();
+  $typeNum = size($shaderType);
+  string $lists[] = `ls -type "ccg_base_template" -type "ccg_base_template_x"`;
+  int $listsNum = size($lists);
+  int $i,$j,$k;
+  string $sel[];
+  for($i=0,$j=0;$i<$listsNum;$i++)
+  {
+    if(`attributeExists "convert_type" $lists[$i]`)
+    {
+      string $type = `getAttr ($lists[$i]+".convert_type")`;
+      for($k=0;$k<$typeNum;$k++)
+      {
+        if($type==$shaderType[$k])
+        {
+          $sel[$j] = $lists[$i];
+          $j++;
+          break;
+        }
+      }
+    }
+  }
+  select $sel;
+}
+
+global proc ccgSE_delete_conversions(int $mode) //1 for delete selected, 2 for delete all
+{
+  int $i,$j,$k,$m,$n;
+  string $sel[];
+  if($mode==1){
+    $sel = `ls -sl`;
+  }else if($mode==2){
+          $sel = `ls -type "ccg_base_template" -type "ccg_base_template_x"`;
+        }
+
+  string $fail[];
+  int $selNum = size($sel);
+  string $type[] = ccgSE_shader_type_require();
+  int $typeNum = size($type);
+  for($i=0,$k=0;$i<$selNum;$i++){
+    for($j=0;$j<$typeNum;$j++){
+      if((`nodeType $sel[$i]`=="ccg_base_template" || `nodeType $sel[$i]`=="ccg_base_template_x") && `attributeExists "convert_type" $sel[$i]` && `getAttr ($sel[$i]+".convert_type")`==$type[$j]){
+        string $tmp[] = `listConnections -d 1 -s 0 -scn 1 ($sel[$i]+".message")`;
+        int $tmpNum = size($tmp);
+        string $engine[];
+        for($m=0,$n=0;$m<$tmpNum;$m++){
+          if(`nodeType $tmp[$m]`=="shadingEngine"){
+            $engine[$n] = $tmp[$m];
+            $n++;
+          }
+        }
+        if(size($engine)==1){
+          int $autoAssign = `checkBoxGrp -q -v1 ccgSE_SC_checkbox1`;
+          if($autoAssign){
+              string $fromShading;
+              if(`attributeExists "convert_from" $sel[$i]`) $fromShading = `getAttr ($sel[$i]+".convert_from")`;
+              if(`gmatch $fromShading "*:assigned*"`) {
+                $fromShading = `substitute ":assigned" $fromShading ""`;
+                if($fromShading!="") {
+                  string $target = `ccgSE_find_shadingEngine $fromShading`;
+                  if($target!="NULL" && $target!="DANGER")
+                    ccgSE_shadingAssign($engine[0], $target);
+                }
+              }
+          }
+          string $cmd = "ccgSE_"+$type[$j]+"_delete(\""+$sel[$i]+"\", \""+$engine[0]+"\");";
+          eval($cmd);
+        }else {$fail[$k] = $sel[$i]; $k++;}
+        break;
+      }
+    }
+  }
+  
+  $m = size($fail);
+  if($m>0){
+    print "The following ccg_base_template shaders can't be deleted:\n";
+    for($i=0;$i<$m;$i++) print ($fail[$i]+"\n");
+    warning "Some ccg_base_template have more than one shading engine, which do not be deleted!";
+  }
+}
+
+global proc ccgSE_menu_initial()
+{
+	//initial state of IBL Mode selection
+  if(`objExists ccgIblGeoInst` || `objExists ccgIblGeoPreview`){
+    optionMenuGrp -e -sl 2 ccgSE_IC_option1;
+  }else if(`objExists ccgIblEnvBall`){
+          optionMenuGrp -e -sl 1 ccgSE_IC_option1;
+        }
+        
+  //initial compress passes check box
+  string $cameras[] = `ls -fl -ca`;
+  ccgSE_IMC_initial($cameras[0]);
+  ccgSE_IMC_refreshOption();
+}
+
+global proc ccgShaderEditor()
+{
+  if(`windowPref -exists ccgSE_windows`) windowPref -e -w 474 -h 600 ccgSE_windows;
+  if(`window -exists ccgSE_windows`) deleteUI ccgSE_windows;
+  window -t "CrystalCG Shader Editor" -w 474 -h 600 -in "ccg shader editor" -rtf true -s true ccgSE_windows;
+  formLayout -nd 100 ccgSE_top_formlayout;
+  scrollLayout -cr true ccgSE_scrollLayout;
+  columnLayout -adjustableColumn true ccgSE_top_columnlayout;
+  frameLayout -l "Shader Conversion" -cll 1 -cl 0 -bs "etchedIn" ccgSE_framelayer1;
+  formLayout -nd 100 ccgSE_formlayout1;
+  optionMenuGrp -l "Shader Type" -cat 1 "right" 10 -annotation "Select shader type for converting" ccgSE_SC_option1;
+    menuItem -l "All"                   ccgSE_SC_menu_1;
+    menuItem -l "misss_fast_skin_maya"  ccgSE_SC_menu_2;
+    menuItem -l "misss_fast_simple_maya" ccgSE_SC_menu_3;
+    menuItem -l "mi_car_paint_phen" ccgSE_SC_menu_4;
+    menuItem -l "mia_material_x" ccgSE_SC_menu_5;
+  checkBoxGrp -ncb 1 -l "Auto assign" -v1 1 -annotation "Automatically assign converted shaders to those objects or components before conversion." ccgSE_SC_checkbox1;
+  radioButtonGrp -l "When found old conversions: " -nrb 2 -sl 1 -l1 "delete" -l2 "keep and creat new" -cw 1 200 -cw 2 80 -cw 3 150 ccgSE_SC_radiobuttongrp1;
+  separator ccgSE_SC_separator1;
+  button -l "Convert Selected" -annotation "Convert the selected shaders if matches the Shader Type you pointed." -c "ccgSE_convert(1)" ccgSE_SC_button1;
+  button -l "Convert All" -annotation "Convert all of the shaders which belong any type of Shader Type." -c "ccgSE_convert(2)" ccgSE_SC_button2;
+  button -l "Select Conversions" -c "ccgSE_select_conversions()" ccgSE_SC_button3;
+  button -l "Delete Conversions" -annotation "Delete all conversions with Shader Type you selected." -c "ccgSE_delete_conversions(2)" ccgSE_SC_button4;
+  button -l "Delete Selected" -annotation "Delete selected conversions with Shader Type you pointed." -c "ccgSE_delete_conversions(1)" ccgSE_SC_button5;
+  
+  setParent ccgSE_top_columnlayout;
+  frameLayout -l "Image Based Lighting Control" -cll 1 -cl 0 -bs "etchedIn" ccgSE_framelayer2;
+  formLayout -nd 100 ccgSE_formlayout2;
+  optionMenuGrp -l "IBL Mode" -cat 1 "right" 10 -annotation "Select Ibl mode to execute" ccgSE_IC_option1;
+    menuItem -l "Environment OR Diffuse" ccgSE_IC_menu1;
+    menuItem -l "Light Array" ccgSE_IC_menu2;
+  optionMenuGrp -l "Advanced Resolution" -cat 1 "right" 10 -annotation "Select resolution for advanced editor" ccgSE_IC_option2;
+    menuItem -l "512x512" ccgSE_IC_menu3;
+    menuItem -l "1024x1024" ccgSE_IC_menu4;
+    menuItem -l "2048x2048" ccgSE_IC_menu5;
+  separator ccgSE_IC_separator1;
+  button -l "Create" -c "ccgSE_IblFuncSet()" ccgSE_IC_button1;
+  button -l "Delete" -c "ccgSE_IblFuncDelete()" ccgSE_IC_button2;
+  button -l "Select" -c "ccgSE_IblFuncSelect()" ccgSE_IC_button3;
+  button -l "Advanced" -c "ccgSE_IBL_AdvWindow(`optionMenuGrp -q -sl ccgSE_IC_option2`)" ccgSE_IC_button4;
+  
+  setParent ccgSE_top_columnlayout;
+  frameLayout -l "Image Compress" -cll 1 -cl 0 -bs "etchedIn" ccgSE_IMC_framelayout;
+  formLayout -nd 100 ccgSE_IMC_formlayout;
+  optionMenuGrp -en true -l "Camera" -cat 1 "right" 10 -annotation "Select camera for image compress" -cc "ccgSE_IMC_initial(`optionMenuGrp -q -v ccgSE_IMC_option`)" ccgSE_IMC_option;
+    string $cams[] = `ls -fl -ca`;
+    int $i;
+    for($i = 0;$i<size($cams);$i++)
+      menuItem -l $cams[$i] ("ccgSE_IMC_option_menu_"+($i+1));
+  text -l "---------- Compress Passes ----------" -fn "boldLabelFont" -al "center" ccgSE_IMC_text;
+  checkBoxGrp -ncb 4 -l1 "Combined" -l2 "Color" -l3 "Diffuse" -l4 "Ambient" ccgSE_IMC_checkboxgrp1;
+  checkBoxGrp -ncb 4 -l1 "Specular" -l2 "Incandescence" -l3 "Reflection" -l4 "Refraction" ccgSE_IMC_checkboxgrp2;
+  checkBoxGrp -ncb 4 -l1 "Normal" -l2 "Occlusion" -l3 "Reflect Occlusion" -l4 "Shadow" ccgSE_IMC_checkboxgrp3;
+  checkBoxGrp -ncb 4 -l1 "Z" -l2 "Global Illumination" -l3 "SSS Front" -l4 "SSS Middle" ccgSE_IMC_checkboxgrp4;
+  checkBoxGrp -ncb 1 -l1 "SSS Back" ccgSE_IMC_checkboxgrp5;
+  button -l "Get selections from Multi-passes output" -c "ccgSE_IMC_getPassesFromBuffer()" ccgSE_IMC_button_get;
+  separator ccgSE_IMC_separator;
+  button -l "Create" -c "ccgSE_imageCompress()" ccgSE_IMC_button1;
+  button -l "Select" -c "ccgSE_imageCompress_select()" ccgSE_IMC_button2;
+  button -l "Delete" -c "ccgSE_imageCompress_delete()" ccgSE_IMC_button3;
+  button -l "Help" -c "ccgSE_imageCompress_help()" ccgSE_IMC_button4;
+  
+  setParent ccgSE_top_columnlayout;
+  separator -vis 1 -st "none" -h 10 ccgSE_HELP_separator1;
+  frameLayout -l "Help Line" -cll 1 -cl 0 -bs "etchedIn" -h 60 ccgSE_framelayer3;
+  formLayout -nd 100 ccgSE_formlayout3;
+  helpLine ccgSE_SC_help1;
+  
+  setParent ccgSE_top_formlayout;
+  button -l "Close" -c "deleteUI ccgSE_windows" ccgSE_button_close;
+  
+  formLayout -edit
+    -attachForm ccgSE_scrollLayout "top" 0
+    -attachForm ccgSE_scrollLayout "left" 0
+    -attachForm ccgSE_scrollLayout "right" 0
+    -attachPosition ccgSE_scrollLayout "bottom" 30 100
+    -attachControl ccgSE_button_close "top" 5 ccgSE_scrollLayout
+    -attachForm ccgSE_button_close "left" 0
+    -attachForm ccgSE_button_close "right" 0
+  ccgSE_top_formlayout;
+
+
+  formLayout -edit
+    -attachForm     ccgSE_SC_option1 "top" 5
+    -attachForm     ccgSE_SC_option1 "left" 0
+    -attachForm     ccgSE_SC_option1 "right" 0
+    -attachControl  ccgSE_SC_checkbox1 "top" 5 ccgSE_SC_option1
+    -attachForm     ccgSE_SC_checkbox1 "left" 0
+    -attachForm     ccgSE_SC_checkbox1 "right" 0
+    -attachControl  ccgSE_SC_radiobuttongrp1 "top" 5 ccgSE_SC_checkbox1
+    -attachForm     ccgSE_SC_radiobuttongrp1 "left" 0
+    -attachForm     ccgSE_SC_radiobuttongrp1 "right" 0
+    -attachControl  ccgSE_SC_separator1     "top" 5 ccgSE_SC_radiobuttongrp1
+    -attachForm     ccgSE_SC_separator1     "left"   0
+    -attachForm     ccgSE_SC_separator1     "right"  0
+    -attachControl  ccgSE_SC_button1 "top"   5 ccgSE_SC_separator1
+    -attachForm     ccgSE_SC_button1 "left"  0
+    -attachPosition ccgSE_SC_button1 "right" 0 33
+    -attachControl  ccgSE_SC_button2 "top"   5 ccgSE_SC_separator1
+    -attachControl  ccgSE_SC_button2 "left"  0 ccgSE_SC_button1
+    -attachPosition ccgSE_SC_button2 "right" 0 66
+    -attachControl  ccgSE_SC_button3 "top"   5 ccgSE_SC_separator1
+    -attachControl  ccgSE_SC_button3 "left"  0 ccgSE_SC_button2
+    -attachPosition ccgSE_SC_button3 "right" 0 100
+    -attachControl  ccgSE_SC_button4 "top" 0 ccgSE_SC_button1
+    -attachForm     ccgSE_SC_button4 "left" 0
+    -attachPosition ccgSE_SC_button4 "right" 0 50
+    -attachControl  ccgSE_SC_button5 "top" 0 ccgSE_SC_button1
+    -attachPosition ccgSE_SC_button5 "left" 0 50
+    -attachForm     ccgSE_SC_button5 "right" 0
+  ccgSE_formlayout1;
+  
+  formLayout -edit
+    -attachForm     ccgSE_IC_option1 "top" 5
+    -attachForm     ccgSE_IC_option1 "left" 0
+    -attachForm     ccgSE_IC_option1 "right" 0
+    -attachControl  ccgSE_IC_option2 "top" 5 ccgSE_IC_option1
+    -attachForm     ccgSE_IC_option2 "left" 0
+    -attachForm     ccgSE_IC_option2 "right" 0
+    -attachControl  ccgSE_IC_separator1 "top" 5 ccgSE_IC_option2
+    -attachForm     ccgSE_IC_separator1 "left" 0
+    -attachForm     ccgSE_IC_separator1 "right" 0
+    -attachControl  ccgSE_IC_button1 "top"   5 ccgSE_IC_separator1
+    -attachForm     ccgSE_IC_button1 "left"  0
+    -attachPosition ccgSE_IC_button1 "right" 0 25
+    -attachControl  ccgSE_IC_button2 "top"   5 ccgSE_IC_separator1
+    -attachControl  ccgSE_IC_button2 "left"  0 ccgSE_IC_button1
+    -attachPosition ccgSE_IC_button2 "right" 0 50
+    -attachControl  ccgSE_IC_button3 "top"   5 ccgSE_IC_separator1
+    -attachControl  ccgSE_IC_button3 "left"  0 ccgSE_IC_button2
+    -attachPosition ccgSE_IC_button3 "right" 0 75
+    -attachControl  ccgSE_IC_button4 "top"   5 ccgSE_IC_separator1
+    -attachControl  ccgSE_IC_button4 "left"  0 ccgSE_IC_button3
+    -attachPosition ccgSE_IC_button4 "right" 0 100
+  ccgSE_formlayout2;
+  
+  formLayout -edit
+    -attachForm     ccgSE_IMC_option "top" 5
+    -attachForm     ccgSE_IMC_option "left" 0
+    -attachForm     ccgSE_IMC_option "right" 0
+    -attachControl  ccgSE_IMC_text "top" 5 ccgSE_IMC_option
+    -attachForm     ccgSE_IMC_text "left" 0
+    -attachForm     ccgSE_IMC_text "right" 0
+    -attachControl  ccgSE_IMC_checkboxgrp1 "top" 5 ccgSE_IMC_text
+    -attachForm     ccgSE_IMC_checkboxgrp1 "left" 0
+    -attachForm     ccgSE_IMC_checkboxgrp1 "right" 0
+    -attachControl  ccgSE_IMC_checkboxgrp2 "top" 5 ccgSE_IMC_checkboxgrp1
+    -attachForm     ccgSE_IMC_checkboxgrp2 "left" 0
+    -attachForm     ccgSE_IMC_checkboxgrp2 "right" 0
+    -attachControl  ccgSE_IMC_checkboxgrp3 "top" 5 ccgSE_IMC_checkboxgrp2
+    -attachForm     ccgSE_IMC_checkboxgrp3 "left" 0
+    -attachForm     ccgSE_IMC_checkboxgrp3 "right" 0
+    -attachControl  ccgSE_IMC_checkboxgrp4 "top" 5 ccgSE_IMC_checkboxgrp3
+    -attachForm     ccgSE_IMC_checkboxgrp4 "left" 0
+    -attachForm     ccgSE_IMC_checkboxgrp4 "right" 0
+    -attachControl  ccgSE_IMC_checkboxgrp5 "top" 5 ccgSE_IMC_checkboxgrp4
+    -attachForm     ccgSE_IMC_checkboxgrp5 "left" 0
+    -attachForm     ccgSE_IMC_checkboxgrp5 "right" 0
+    -attachControl	ccgSE_IMC_button_get "top" 2 ccgSE_IMC_checkboxgrp5
+    -attachForm			ccgSE_IMC_button_get "left" 0
+    -attachForm			ccgSE_IMC_button_get "right" 0
+    -attachControl  ccgSE_IMC_separator "top" 2 ccgSE_IMC_button_get
+    -attachForm     ccgSE_IMC_separator "left" 0
+    -attachForm     ccgSE_IMC_separator "right" 0
+    -attachControl  ccgSE_IMC_button1 "top"   5 ccgSE_IMC_separator
+    -attachForm     ccgSE_IMC_button1 "left"  0
+    -attachPosition ccgSE_IMC_button1 "right" 0 25
+    -attachControl  ccgSE_IMC_button2 "top"   5 ccgSE_IMC_separator
+    -attachControl  ccgSE_IMC_button2 "left"  0 ccgSE_IMC_button1
+    -attachPosition ccgSE_IMC_button2 "right" 0 50
+    -attachControl	ccgSE_IMC_button3 "top" 5 ccgSE_IMC_separator
+    -attachControl	ccgSE_IMC_button3 "left" 0 ccgSE_IMC_button2
+    -attachPosition	ccgSE_IMC_button3 "right" 0 75
+    -attachControl	ccgSE_IMC_button4 "top" 5 ccgSE_IMC_separator
+    -attachControl	ccgSE_IMC_button4 "left" 0 ccgSE_IMC_button3
+    -attachForm			ccgSE_IMC_button4 "right" 0
+  ccgSE_IMC_formlayout;
+  
+  formLayout -edit
+    -attachForm     ccgSE_SC_help1 "top" 0
+    -attachForm     ccgSE_SC_help1 "left" 0
+    -attachForm     ccgSE_SC_help1 "right" 0
+  ccgSE_formlayout3;
+  
+  ccgSE_menu_initial();
+   
+  showWindow ccgSE_windows;
+}

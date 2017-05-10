@@ -1,0 +1,30 @@
+
+global proc AEccg_simple_mathTemplate ( string $nodeName ) 
+{ 
+	AEswatchDisplay $nodeName; 
+
+	editorTemplate -beginScrollLayout;
+
+	editorTemplate -beginLayout "Color Operation" -collapse 0; 
+		editorTemplate -label "Method" -addControl "operation_color";
+		editorTemplate -label "Colors" -addControl "colors";
+	editorTemplate -endLayout;
+	
+	editorTemplate -beginLayout "Vector Operation" -collapse 1; 
+		editorTemplate -label "Method" -addControl "operation_vector";
+		editorTemplate -beginNoOptimize -label "Normalize Input" -addControl "normalize_input";
+		editorTemplate -endNoOptimize -label "Normalize Output" -addControl "normalize_output";
+		editorTemplate -label "Vectors" -addControl "vectors";
+	editorTemplate -endLayout;
+	
+	editorTemplate -beginLayout "Scalar Operation" -collapse 1; 
+		editorTemplate -label "Method" -addControl "operation_scalar";
+		editorTemplate -label "Scalars" -addControl "scalars";
+	editorTemplate -endLayout;
+	
+	AEdependNodeTemplate $nodeName;
+	editorTemplate -addExtraControls;
+
+	editorTemplate -endScrollLayout; 
+} 
+

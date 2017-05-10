@@ -1,0 +1,45 @@
+
+global proc AEccg_base_useBackgroundTemplate ( string $nodeName ) 
+{ 
+	AEswatchDisplay $nodeName; 
+
+	editorTemplate -beginScrollLayout;
+
+	editorTemplate -beginLayout "Use Background Attributes" -collapse 0; 
+		editorTemplate -label "Specular Color" -addControl "specularColor";
+		editorTemplate -label "Reflectivity" -addControl "reflectivity";
+		editorTemplate -label "Shadow Mask" -addControl "shadowMask";
+	editorTemplate -endLayout; 
+	
+	editorTemplate -beginLayout "Matte Opacity Attributes" -collapse 0; 
+		editorTemplate -label "Matte Opacity Mode" -addControl "matteOpacityMode";
+		editorTemplate -label "Matte Opacity" -addControl "matteOpacity";
+	editorTemplate -endLayout; 
+	
+	editorTemplate -beginLayout "Image Based Lighting" -collapse 1; 
+		editorTemplate -label "Enable IBL" -addControl "ibl_enable";
+		editorTemplate -label "Bent Normal" -addControl "bent";
+		editorTemplate -label "Bent Space" -addControl "bent_space";
+		editorTemplate -label "Shadow Mode" -addControl "ibl_shadow_mode";
+		editorTemplate -label "Min Distance" -addControl "min_dist";
+		editorTemplate -label "Max Distance" -addControl "max_dist";
+		editorTemplate -label "Bright" -addControl "ibl_bright";
+		editorTemplate -label "Dark" -addControl "ibl_dark";
+		editorTemplate -label "Emit Diffuse" -addControl "ibl_emit_diffuse";
+		editorTemplate -label "Lighting Sample Angle" -addControl "ibl_angle";
+	editorTemplate -endLayout;
+	
+	editorTemplate -beginLayout "Render Layers Control" -collapse 1; 
+		editorTemplate -label "Depth Limit Min" -addControl "depthLimitMin";
+		editorTemplate -label "Depth Limit Max" -addControl "depthLimitMax";
+		editorTemplate -label "Layer" -addControl "layer";
+		editorTemplate -label "Output All Layers" -addControl "passesInOnce";
+		editorTemplate -label "fbWriteString" -addControl "fbWriteString"; 
+	editorTemplate -endLayout; 
+	
+	AEdependNodeTemplate $nodeName;
+	editorTemplate -addExtraControls;
+
+	editorTemplate -endScrollLayout; 
+} 
+

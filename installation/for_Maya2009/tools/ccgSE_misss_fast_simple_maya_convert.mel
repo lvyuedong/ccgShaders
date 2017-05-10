@@ -1,0 +1,199 @@
+global proc ccgSE_misss_fast_simple_maya_commonSet(string $fb, string $inputShader, string $sourceShader, string $bump, string $mrtexture, string $lights[])
+{
+  int $iv;
+  float $fv,$fd[];
+  setAttr ($inputShader+".ambient") -type double3 0 0 0;
+  setAttr ($inputShader+".overall_color") -type double3 1 1 1;
+  setAttr ($inputShader+".diffuse_weight") 0;
+  setAttr ($inputShader+".front_sss_weight") 0;
+  setAttr ($inputShader+".back_sss_weight") 0;
+  switch($fb){
+    case "f":   ccgSE_copyAttr($sourceShader, "front_sss_color", $inputShader, "front_sss_color", "double3");
+                ccgSE_copyAttr($sourceShader, "front_sss_radius", $inputShader, "front_sss_radius", "float");
+                setAttr ($inputShader+".back_sss_color") -type double3 0 0 0;
+                break;
+    case "b":   ccgSE_copyAttr($sourceShader, "back_sss_color", $inputShader, "back_sss_color", "double3");
+                ccgSE_copyAttr($sourceShader, "back_sss_radius", $inputShader, "back_sss_radius", "float");
+                ccgSE_copyAttr($sourceShader, "back_sss_depth", $inputShader, "back_sss_depth", "float");
+                setAttr ($inputShader+".front_sss_color") -type double3 0 0 0;
+                break;
+  }
+  setAttr ($inputShader+".specular") -type double3 0 0 0;
+  ccgSE_copyAttr($sourceShader, "samples", $inputShader, "samples", "int");
+  ccgSE_copyAttr($sourceShader, "scale_conversion", $inputShader, "scale_conversion", "float");
+  ccgSE_copyAttr($sourceShader, "falloff", $inputShader, "falloff", "float");
+  if(size($mrtexture))connectAttr -f $mrtexture ($inputShader+".lightmap");
+  setAttr ($inputShader+".screen_composit") 0;
+  ccgSE_set_lightLists($inputShader, $lights);
+}
+
+global proc int ccgSE_misss_fast_simple_maya_convert(string $inputShader, int $mode)
+{
+  global string $gCcgSE_Convertions[];
+  global string $gCcgSE_currentTemplate;
+  
+  string $shadingEngine, $lightmap, $mrtexture, $bump, $lights[];
+  string $tmp[];
+  
+  if(`nodeType $inputShader`!="misss_fast_simple_maya")
+  {
+    warning "Please select misss_fast_simple_maya shader to convert.\n";
+    return 0;
+  }
+
+  //find $shadingEngine
+  $shadingEngine = ccgSE_find_shadingEngine($inputShader);
+  if($shadingEngine=="DANGER") {warning ("The "+$inputShader+" might be a danger shader because more than one shadingEngine had been connected! Conversion failed.\n"); return 0;}
+  else if($shadingEngine=="NULL") {warning ("The "+$inputShader+" has no shadingEngine, can't be converted!\n"); return 0;}
+
+  //find lightmap  
+  if(`attributeExists "miLightMapShader" $shadingEngine`)
+  {
+    $tmp = `listConnections -d 0 -s 1 -scn 1 ($shadingEngine+".miLightMapShader")`;
+    if(size($tmp)==0) {warning ($inputShader+" has no lightmap connection, can't be converted!\n"); return 0;}
+    else $lightmap = $tmp[0];
+  }else {warning ($inputShader+"'s shadingEngine \""+$shadingEngine+"\" has no miLightMapShader attribute, can't be converted!\n"); return 0;}
+    
+  //find mr texture
+  if(`attributeExists "lightmap" $lightmap` && `attributeExists "lightmap" $inputShader`)
+  {
+    string $tex1[] = `listConnections -d 0 -s 1 -p 1 -scn 1 ($lightmap+".lightmap")`;
+    string $tex2[] = `listConnections -d 0 -s 1 -p 1 -scn 1 ($inputShader+".lightmap")`;
+    if($tex1[0] == $tex2[0]) $mrtexture = $tex1[0];
+    else {warning ("Can't find valid texture node for lightmap "+$lightmap+" and "+$inputShader+", convert failed!\n"); return 0;}
+  }else {warning ("Can't find valid texture node for lightmap "+$lightmap+" and "+$inputShader+", convert failed!\n"); return 0;}
+
+  //find bump
+  if(`attributeExists "normalCamera" $inputShader`)
+  {
+    $tmp = `listConnections -d 0 -s 1 -p 1 -scn 1 ($inputShader+".normalCamera")`;
+    if(size($tmp)>0) $bump = $tmp[0];
+  }
+  
+  //find light lists
+  $lights = ccgSE_find_lightLists($inputShader);
+  
+  //create template shader and shading engine
+  string $newShadingEngine, $templateShader;
+  int $i,$j;
+  string $existTemplates[],$existEngines[];
+  $existTemplates = `listConnections -d 1 -s 0 -scn 1 -type "ccg_base_template" ($inputShader+".scale_conversion")`;
+  $existTemplates = stringArrayRemoveDuplicates($existTemplates);
+  for($i=0;$i<size($existTemplates);$i++){
+    $existEngines[$i] = ccgSE_find_shadingEngine($existTemplates[$i]);
+  }
+  if(`size $existTemplates`) 
+  {
+    if($mode==1)
+    {
+      for($i=0;$i<size($existTemplates);$i++)
+      {
+        string $keep[];
+        tokenize $bump "." $keep;
+        if(!`ccgSE_template_delete $existTemplates[$i] $existEngines[$i] $keep[0] ""`) {
+          warning ($existEngines[$i]+" and "+$existTemplates[$i]+" can't be deleted, convert failed!\n"); return 0;
+        }
+      }
+    }
+  }
+  $newShadingEngine = `sets -renderable true -noSurfaceShader true -empty`;
+  $templateShader = `shadingNode -asShader ccg_base_template`;
+  connectAttr ($templateShader+".message") ($newShadingEngine+".miMaterialShader");
+  connectAttr -f ($lightmap+".message") ($newShadingEngine+".miLightMapShader");
+
+  /* build shaders */
+  
+  //build specular shader
+  string $specular = `shadingNode -asShader misss_fast_simple_maya`;
+  setAttr ($specular+".ambient") -type double3 0 0 0;
+  setAttr ($specular+".overall_color") -type double3 0 0 0;
+  setAttr ($specular+".diffuse_color") -type double3 0 0 0;
+  setAttr ($specular+".diffuse_weight") 0;
+  setAttr ($specular+".front_sss_radius") 0;
+  setAttr ($specular+".front_sss_color") -type double3 0 0 0;
+  setAttr ($specular+".front_sss_weight") 0;
+  setAttr ($specular+".back_sss_radius") 0;
+  setAttr ($specular+".back_sss_depth") 0;
+  setAttr ($specular+".back_sss_color") -type double3 0 0 0;
+  setAttr ($specular+".back_sss_weight") 0;
+  setAttr ($specular+".samples") 0;
+  setAttr ($specular+".screen_composit") 0;
+  ccgSE_copyAttr($inputShader, "specular", $specular, "specular", "double3");
+	ccgSE_copyAttr($inputShader, "exponent", $specular, "exponent", "float");
+  ccgSE_set_lightLists($specular, $lights);
+  connectAttr -f ($specular+".message") ($templateShader+".specular");
+
+  //build reflect shader
+
+  //build lambert shader
+  string $lambert = `shadingNode -asShader ccg_base_lambert`;
+  setAttr ($lambert+".color") -type double3 1 1 1;
+  float $fv = `getAttr ($inputShader+".diffuse_weight")`;
+  setAttr ($lambert+".diffuse") $fv;
+  //connectAttr -f $bump ($lambert+".normalMapping");
+  ccgSE_set_lightLists($lambert, $lights);
+  connectAttr -f ($lambert+".message") ($templateShader+".diffuse");
+  
+  //build sss shader
+  //sss front
+  string $sssfront = `shadingNode -asShader misss_fast_simple_maya`;
+  ccgSE_misss_fast_simple_maya_commonSet("f", $sssfront, $inputShader, $bump, $mrtexture, $lights);
+  ccgSE_copyAttr($inputShader, "front_sss_weight", $sssfront, "front_sss_weight", "float");
+  connectAttr -f ($sssfront+".message") ($templateShader+".sss_front");
+  //sss back
+  string $sssback = `shadingNode -asShader misss_fast_simple_maya`;
+  ccgSE_misss_fast_simple_maya_commonSet("b", $sssback, $inputShader, $bump, $mrtexture, $lights);
+  ccgSE_copyAttr($inputShader, "back_sss_weight", $sssback, "back_sss_weight", "float");
+  connectAttr -f ($sssback+".message") ($templateShader+".sss_back");
+
+  //set template attributes
+  ccgSE_copyAttr($inputShader, "overall_color", $templateShader, "overallColor", "double3");
+  ccgSE_copyAttr($inputShader, "diffuse_color", $templateShader, "color", "double3");
+  float $fv = `getAttr ($inputShader+".diffuse_weight")`;
+  float $fd[] = `getAttr ($inputShader+".diffuse_color")`;
+  string $sources_tmp[] = `listConnections -d 0 -s 1 -scn 1 -p 1 ($inputShader+".ambient")`;
+  if($sources_tmp[0]!=""){
+    string $multiplyNode = `createNode multiplyDivide`;
+    ccgSE_copyAttr($inputShader, "ambient", $multiplyNode, "input1", "double3");
+    setAttr ($multiplyNode+".input2") -type double3 $fv $fv $fv;
+    if(!`isConnected ($multiplyNode+".output") ($templateShader+".ambient")`)
+        connectAttr -f ($multiplyNode+".output") ($templateShader+".ambient");
+  }else setAttr ($templateShader+".ambient") -type double3 ($fd[0]*$fv) ($fd[1]*$fv) ($fd[2]*$fv);
+  ccgSE_copyAttr($inputShader, "screen_composit", $templateShader, "blendMode", "int");
+  if(size($bump)) connectAttr -f $bump ($templateShader+".normalMapping");
+  
+  //add extra attribute
+  addAttr -ln "convert_type" -dt "string"  $templateShader;
+  setAttr -type "string" ($templateShader+".convert_type") "misss_fast_simple_maya";
+  addAttr -ln "keepTouch"  -at double $templateShader;
+  connectAttr -f ($inputShader+".scale_conversion") ($templateShader+".keepTouch");
+  addAttr -ln "convert_from" -dt "string"  $templateShader;
+  setAttr -type "string" ($templateShader+".convert_from") $inputShader;
+
+  int $gSize = size($gCcgSE_Convertions);
+  $gCcgSE_Convertions[$gSize] = $templateShader;
+  //print ("misss_fast_simple_maya shader \""+$inputShader+"\" has been successfully converted to the \""+$templateShader+"\"\n");
+  
+  $gCcgSE_currentTemplate = $templateShader;
+  return 1;
+}
+
+
+global proc ccgSE_misss_fast_simple_maya_delete(string $shader, string $engine)
+{
+  string $exclude;
+  if(`objExists $shader`&&`objExists $engine`){
+    if(`attributeExists "keepTouch" $shader`){
+      string $fromShader[] = `listConnections -d 0 -s 1 -scn 1 ($shader+".keepTouch")`;
+      if($fromShader[0]!=""){
+        string $excludeArray[] = `listConnections -d 0 -s 1 -scn 1 $fromShader[0]`;
+        $excludeArray = stringArrayRemoveDuplicates($excludeArray);
+        int $i;
+        for($i=0;$i<size($excludeArray);$i++)
+          $exclude += $excludeArray[$i] + ";";
+        $exclude = startString($exclude, (size($exclude)-1));
+      }
+    }
+    ccgSE_template_delete($shader,$engine,$exclude,"");
+  }
+}

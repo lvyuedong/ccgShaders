@@ -1,0 +1,140 @@
+global proc AEccg_base_mix20layers_mode( string $attrName )
+{
+
+  setUITemplate -pst attributeEditorTemplate;
+  rowColumnLayout -nc 1 -columnWidth 1 400;
+
+  attrEnumOptionMenuGrp -l "Blend Mode" -at $attrName 
+      -ei 0 "Normal"
+      -ei 1 "Darken"
+      -ei 2 "Multiply"
+      -ei 3 "Color Burn"
+      -ei 4 "Inverse Color burn"
+      -ei 5 "Subtract"
+      -ei 6 "Add"
+      -ei 7 "Lighten"
+      -ei 8 "Screen"
+      -ei 9 "Color Dodge"
+      -ei 10 "Inverse Color Dodge"
+      -ei 11 "Overlay"
+      -ei 12 "Soft Light"
+      -ei 13 "Hard Light"
+      -ei 14 "Reflect"
+      -ei 15 "Glow"
+      -ei 16 "Average"
+      -ei 17 "Difference"
+      -ei 18 "Exclusion"
+      ccgBaseMix20layers_bcmodeGrp;
+
+  setUITemplate -ppt;
+  AEccg_base_mix20layers_replace_mode( $attrName );
+}
+
+global proc AEccg_base_mix20layers_replace_mode( string $attrName )
+{
+  attrEnumOptionMenuGrp -e -at $attrName ccgBaseMix20layers_bcmodeGrp;
+}
+
+global proc AEccg_base_mix20layers_alphamode( string $attrName )
+{
+  setUITemplate -pst attributeEditorTemplate;
+
+  rowColumnLayout -nc 1 -columnWidth 1 400;
+
+  attrEnumOptionMenuGrp -l "Alpha Mode" -at $attrName 
+      -ei 0 "Default"
+      -ei 1 "Dont add to Alpha"
+      -ei 2 "Highest Alpha"
+      -ei 3 "Add to Alpha"
+      -ei 4 "Full Alpha"
+      ccgBaseMix20layers_bcalphamodeGrp;
+
+  setUITemplate -ppt;
+  AEccg_base_mix20layers_replace_alphamode( $attrName );
+}
+
+global proc AEccg_base_mix20layers_replace_alphamode( string $attrName )
+{
+  attrEnumOptionMenuGrp -e -at $attrName ccgBaseMix20layers_bcalphamodeGrp;
+}
+
+global proc AEccg_base_mix20layers_enableFade( string $nodeName ) 
+{
+int $i;
+for ($i = 1; $i < 21; $i++)
+  { 
+  if (`getAttr ($nodeName+".Enable_"+$i)`)
+    {
+      editorTemplate -dimControl $nodeName ("BlendMode_"+$i) false;
+      editorTemplate -dimControl $nodeName ("Opacity_"+$i) false;
+      editorTemplate -dimControl $nodeName ("shader_"+$i) false;
+      editorTemplate -dimControl $nodeName ("AlphaMode_"+$i) false;
+      editorTemplate -dimControl $nodeName ("mix_"+$i) false;
+      editorTemplate -dimControl $nodeName ("alphaInvert_"+$i) false;
+      editorTemplate -dimControl $nodeName ("useOpacity_"+$i) false;
+    } 
+  else 
+    {
+      editorTemplate -dimControl $nodeName ("BlendMode_"+$i) true;
+      editorTemplate -dimControl $nodeName ("Opacity_"+$i) true;
+      editorTemplate -dimControl $nodeName ("shader_"+$i) true;
+      editorTemplate -dimControl $nodeName ("AlphaMode_"+$i) true;
+      editorTemplate -dimControl $nodeName ("mix_"+$i) true;
+      editorTemplate -dimControl $nodeName ("alphaInvert_"+$i) true;
+      editorTemplate -dimControl $nodeName ("useOpacity_"+$i) true;
+    }
+  }
+}
+
+global proc AEccg_base_mix20layersTemplate( string $nodeName )
+{
+  editorTemplate -beginScrollLayout;
+    editorTemplate -beginLayout "Ccg Mix 20 Layers" -collapse 0 -bn;  
+      //global attributes
+      editorTemplate -beginLayout "Global Controls" -collapse 0 -bn;
+        editorTemplate -l "Number Of Layers" -addControl "g_layers_number";
+        editorTemplate -l "Inverse Output Alpha" -addControl "g_inverse_alpha";
+      editorTemplate -endLayout;
+      //local attributes
+      int $i; 
+      for ($i = 1; $i < 21; $i++){
+          if($i==1) editorTemplate -beginLayout ("Layer "+$i) -collapse 0 -bn;
+          else editorTemplate -beginLayout ("Layer "+$i) -collapse 1 -bn;
+            editorTemplate -l "Enable" -addControl ("Enable_"+$i) "AEccg_base_mix20layers_enableFade";
+            editorTemplate -s ("BlendMode_"+$i);
+            editorTemplate -callCustom "AEccg_base_mix20layers_mode" "AEccg_base_mix20layers_replace_mode" ("BlendMode_"+$i);
+            editorTemplate -l "Shader" -addControl ("shader_"+$i);
+            editorTemplate -l "Transparency" -addControl ("Opacity_"+$i);
+            editorTemplate -s ("AlphaMode_"+$i);
+            editorTemplate -callCustom "AEccg_base_mix20layers_alphamode" "AEccg_base_mix20layers_replace_alphamode" ("AlphaMode_"+$i);
+            editorTemplate -l "Mix" -addControl ("mix_"+$i);
+            editorTemplate -l "Invert Alpha" -addControl ("alphaInvert_"+$i);
+			editorTemplate -l "Use Transparency" -addControl ("useOpacity_"+$i);
+          editorTemplate -endLayout;
+      }
+      editorTemplate -beginLayout "Color Clip" -collapse 1 -bn;
+        editorTemplate -l "Color Clip" -addControl "ColorClip";
+      editorTemplate -endLayout;
+	  
+	  	editorTemplate -beginLayout "Render Layers Control" -collapse 1 -bn;
+        editorTemplate -io -label "Output All Layers" -addControl "passesInOnce";
+				editorTemplate -label "fbWriteString" -addControl "fbWriteString"; 
+      editorTemplate -endLayout;
+      
+      editorTemplate -beginLayout "Shadow Trace Function" -collapse 1; 
+				editorTemplate -io -ann "Enable if shaders are hidden behind the ccg_base_mix20layers" -label "Disable Shadow Chain" -addControl "disableShadowChain";
+			editorTemplate -endLayout; 
+    editorTemplate -endLayout;  
+      
+    editorTemplate -beginLayout "Hardware Texturing" -collapse true; 
+      editorTemplate -addControl "hardwareColor"; 
+      editorTemplate -addSeparator; 
+      AEhardwareTextureTemplate $nodeName 
+      ("hardwareColor"); 
+    editorTemplate -endLayout;    
+  
+    AEdependNodeTemplate $nodeName;
+    
+    editorTemplate -addExtraControls;
+  editorTemplate -endScrollLayout;
+}

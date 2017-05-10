@@ -1,0 +1,191 @@
+
+
+global proc string ccgSE_passesNameConvert(string $name)
+{
+  switch ($name)
+  {
+    case "Combined":            return "combined";
+    case "Color":               return "col";
+    case "Diffuse":             return "diff";
+    case "Ambient":             return "ambi";
+    case "Specular":            return "spec";
+    case "Incandescence":       return "incan";
+    case "Reflection":          return "refl";
+    case "Refraction":          return "refr";
+    case "Z":                   return "z";
+    case "Normal":              return "nor";
+    case "Occlusion":           return "ao";
+    case "Shadow":              return "shad";
+    case "Vector":              return "vec";
+    case "UV":                  return "uv";
+    case "Object Id":           return "oid";
+    case "Material Id":         return "mid";
+    case "Reflect Occlusion":   return "reflao";
+    case "Refract Occlusion":   return "refrao";
+    case "Global Illumination": return "globillum";
+    case "Translucent":         return "translucent";
+    case "SSS Front":           return "sssfront";
+    case "SSS Middle":          return "sssmiddle";
+    case "SSS Back":            return "sssback";
+  }
+}
+
+global proc ccgSE_shadingAssign(string $origEngine, string $templateEngine)
+{
+  string $setlists[] = `sets -q $origEngine`;
+  sets -e -fe $templateEngine $setlists;
+}
+
+global proc string ccgSE_find_shadingEngine(string $inputShader)
+{
+  string $tmp[] = `listConnections -d 1 -s 0 -scn 1 -t "shadingEngine" $inputShader`;
+  string $shortTmp[] = stringArrayRemoveDuplicates($tmp);
+  if(size($shortTmp)<=0) return "NULL";
+  else if(size($shortTmp)>1) return "DANGER";
+  else return $shortTmp[0];
+}
+
+global proc string[] ccgSE_find_lightLists(string $inputShader)
+{
+  string $lights[];
+  if(`attributeExists "lights" $inputShader`)
+    $lights = `listConnections -d 0 -s 1 -scn 1 ($inputShader+".lights")`;
+  if(`attributeExists "mode" $inputShader`)
+    $lights[`size $lights`] = string(`getAttr ($inputShader+".mode")`);
+  return $lights;
+}
+
+global proc int ccgSE_set_lightLists(string $inputShader, string $lights[])
+{
+  int $lightsNum = size($lights) - 1;
+  int $i;
+  if($lightsNum)
+  {
+    if(`attributeExists "lights" $inputShader`)
+    {
+      for($i=0; $i<$lightsNum; $i++)
+        connectAttr -f ($lights[$i]+".message") ($inputShader+".lights["+$i+"]");
+    }else return 0;
+    if(`attributeExists "mode" $inputShader`) setAttr ($inputShader+".mode") (int($lights[$lightsNum]));
+  }else return 1;
+  
+  return 1;
+}
+
+global proc int ccgSE_template_delete(string $shader, string $shadingEngine, string $keepNodes, string $keepTypes)
+{
+  //$keep contain those nodes which couldn't be deleted, tokenized with ";"
+  string $components[];
+  string $tmp[];
+  if(`objExists $shader`)
+  {
+    if(`nodeType $shader`=="ccg_base_template")
+    {
+      if(`attributeExists "keepTouch" $shader`){
+        string $keepShader[] = `listConnections -d 0 -s 1 -scn 1 -p 1 ($shader+".keepTouch")`;
+        if($keepShader[0]!=""){
+          disconnectAttr $keepShader[0] ($shader+".keepTouch");
+        }
+      }
+      $components = `listConnections -d 0 -s 1 -scn 1 $shader`;
+    }else return 0;
+  }
+  //remove keep nodes
+  string $tok[];
+  tokenize $keepNodes ";" $tok;
+  string $removeKeepNodes[] = stringArrayRemove($tok, $components);
+  
+  //remove keep types
+  int $i,$j,$k,$numType,$num;
+  clear $tok;
+  tokenize $keepTypes ";" $tok;
+  $numType = size($tok);
+  $num = size($removeKeepNodes);
+  string $willDelete[];
+  string $willRemove[];
+  for($i=0,$k=0;$i<$numType;$i++)
+  {
+    for($j=0;$j<$num;$j++)
+    {
+      if(`nodeType $removeKeepNodes[$j]`==$tok[$i])
+      {
+        $willRemove[$k] = $removeKeepNodes[$j];
+        $k++;
+      }
+    }
+  }
+  $willDelete = stringArrayRemove($willRemove, $removeKeepNodes);
+  
+  //delete template and shading engine
+  $num = size($willDelete);
+  for($i=0;$i<$num;$i++)
+    if(`objExists $willDelete[$i]`) delete $willDelete[$i];
+  if(`objExists $shadingEngine`) delete $shadingEngine;
+  if(`objExists $shader`) delete $shader;
+
+  return 1;
+}
+
+global proc ccgSE_setAttr(string $source, string $attr1, string $destination, string $attr2, string $attrType)
+{
+  if(`attributeExists $attr1 $source` && `attributeExists $attr2 $destination`){
+    string $sourceAttr = $source+"."+$attr1;
+    string $desAttr = $destination+"."+$attr2;
+    switch($attrType){
+        case "short2":  int $i2[2] = `getAttr $sourceAttr`;
+                        setAttr $desAttr -type "short2" $i2[0] $i2[1];
+                        break;
+        case "short3":  int $i3[3] = `getAttr $sourceAttr`;
+                        setAttr $desAttr -type "short3" $i3[0] $i3[1] $i3[2];
+                        break;
+        case "long2":   int $i2[2] = `getAttr $sourceAttr`;
+                        setAttr $desAttr -type "long2" $i2[0] $i2[1];
+                        break;
+        case "long3":   int $i3[3] = `getAttr $sourceAttr`;
+                        setAttr $desAttr -type "long3" $i3[0] $i3[1] $i3[2];
+                        break;
+        case "float":   float $f1 = `getAttr $sourceAttr`;
+                        setAttr $desAttr $f1;
+                        break;
+        case "float2":  float $f2[2] = `getAttr $sourceAttr`;
+                        setAttr $desAttr -type "float2" $f2[0] $f2[1];
+                        break;
+        case "float3":  float $f3[3] = `getAttr $sourceAttr`;
+                        setAttr $desAttr -type "float3" $f3[0] $f3[1] $f3[2];
+                        break;
+        case "double":   float $f1 = `getAttr $sourceAttr`;
+                        setAttr $desAttr $f1;
+                        break;
+        case "double2":  float $f2[2] = `getAttr $sourceAttr`;
+                        setAttr $desAttr -type "double2" $f2[0] $f2[1];
+                        break;
+        case "double3":  float $f3[3] = `getAttr $sourceAttr`;
+                        setAttr $desAttr -type "double3" $f3[0] $f3[1] $f3[2];
+                        break;
+        case "matrix":  float $fm[] = `getAttr $sourceAttr`;
+                        setAttr $desAttr -type "matrix" $fm[0] $fm[1] $fm[2] $fm[3] $fm[4] $fm[5] $fm[6] $fm[7] $fm[8] $fm[9] $fm[10] $fm[11] $fm[12] $fm[13] $fm[14] $fm[15];
+                        break;
+        case "string":  string $s = `getAttr $sourceAttr`;
+                        setAttr $desAttr -type "string" $s;
+                        break;
+        case "bool":    int $i1 = `getAttr $sourceAttr`;
+                        setAttr $desAttr $i1;
+                        break;
+        case "int":     int $i1 = `getAttr $sourceAttr`;
+                        setAttr $desAttr $i1;
+                        break;
+      }
+  }
+}
+
+global proc ccgSE_copyAttr(string $source, string $attr1, string $destination, string $attr2, string $attrType)
+{
+  if($source!=$destination && `attributeExists $attr1 $source` && `attributeExists $attr2 $destination`){
+    string $sources[] = `listConnections -d 0 -s 1 -scn 1 -p 1 ($source+"."+$attr1)`;
+    if($sources[0]!=""){
+      if(!`isConnected $sources[0] ($destination+"."+$attr2)`){
+        connectAttr -f $sources[0] ($destination+"."+$attr2);
+      }
+    }else ccgSE_setAttr($source, $attr1, $destination, $attr2, $attrType);
+  }
+}

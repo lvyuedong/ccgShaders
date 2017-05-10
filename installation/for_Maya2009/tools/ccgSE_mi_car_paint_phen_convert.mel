@@ -1,0 +1,265 @@
+global proc ccgSE_mi_car_paint_phen_commonSet(string $dsr, string $inputShader, string $sourceShader, string $lights[])
+{
+  setAttr ($inputShader+".ambient") -type double3 0 0 0;
+  setAttr ($inputShader+".base_color") -type double3 0 0 0;
+  setAttr ($inputShader+".edge_color") -type double3 0 0 0;
+  setAttr ($inputShader+".lit_color") -type double3 0 0 0;
+  setAttr ($inputShader+".diffuse_weight") 0;
+  setAttr ($inputShader+".spec") -type double3 0 0 0;
+  setAttr ($inputShader+".spec_weight") 0;
+  setAttr ($inputShader+".spec_sec") -type double3 0 0 0;
+  setAttr ($inputShader+".spec_sec_weight") 0;
+  setAttr ($inputShader+".spec_glazing") 0;
+  setAttr ($inputShader+".flake_color") -type double3 0 0 0;
+  setAttr ($inputShader+".flake_weight") 0;
+  setAttr ($inputShader+".reflection_color") -type double3 0 0 0;
+  setAttr ($inputShader+".reflection_edge_weight") 0;
+  setAttr ($inputShader+".reflection_base_weight") 0;
+  setAttr ($inputShader+".dirt_color") -type double3 0 0 0;
+  setAttr ($inputShader+".dirt_weight") 0;
+  setAttr ($inputShader+".irradiance_weight") 0;
+  setAttr ($inputShader+".global_weight") 0;
+  
+  switch($dsr){
+    case "d":   //diffuse
+                string $tmp[] = `listConnections -d 0 -s 1 -p 0 -scn 1 ($sourceShader+".ambient")`;
+                if(`objExists $tmp[0]`){
+                  if(`nodeType $tmp[0]`=="lyrid_passthrough")
+                    ccgSE_copyAttr($tmp[0], "sub_color", $inputShader, "ambient", "double3");
+                }else {
+                        ccgSE_copyAttr($sourceShader, "ambient", $inputShader, "ambient", "double3");
+                      }
+                ccgSE_copyAttr($sourceShader, "base_color", $inputShader, "base_color", "double3");
+                ccgSE_copyAttr($sourceShader, "edge_color", $inputShader, "edge_color", "double3");
+                ccgSE_copyAttr($sourceShader, "edge_color_bias", $inputShader, "edge_color_bias", "float");
+                ccgSE_copyAttr($sourceShader, "lit_color", $inputShader, "lit_color", "double3");
+                ccgSE_copyAttr($sourceShader, "lit_color_bias", $inputShader, "lit_color_bias", "float");
+                ccgSE_copyAttr($sourceShader, "diffuse_bias", $inputShader, "diffuse_bias", "float");
+                break;
+    case "s":   //specular
+                ccgSE_copyAttr($sourceShader, "spec", $inputShader, "spec", "double3");
+                ccgSE_copyAttr($sourceShader, "spec_exp", $inputShader, "spec_exp", "float");
+                ccgSE_copyAttr($sourceShader, "spec_sec", $inputShader, "spec_sec", "double3");
+                ccgSE_copyAttr($sourceShader, "spec_sec_exp", $inputShader, "spec_sec_exp", "float");
+                ccgSE_copyAttr($sourceShader, "spec_glazing", $inputShader, "spec_glazing", "int");
+                ccgSE_copyAttr($sourceShader, "flake_color", $inputShader, "flake_color", "double3");
+                ccgSE_copyAttr($sourceShader, "flake_reflect", $inputShader, "flake_reflect", "float");
+                ccgSE_copyAttr($sourceShader, "flake_exp", $inputShader, "flake_exp", "float");
+                ccgSE_copyAttr($sourceShader, "flake_density", $inputShader, "flake_density", "float");
+                ccgSE_copyAttr($sourceShader, "flake_decay", $inputShader, "flake_decay", "float");
+                ccgSE_copyAttr($sourceShader, "flake_strength", $inputShader, "flake_strength", "float");
+                ccgSE_copyAttr($sourceShader, "flake_scale", $inputShader, "flake_scale", "float");
+                break;
+    case "r":   //reflection
+                ccgSE_copyAttr($sourceShader, "reflection_color", $inputShader, "reflection_color", "double3");
+                ccgSE_copyAttr($sourceShader, "edge_factor", $inputShader, "edge_factor", "float");
+                ccgSE_copyAttr($sourceShader, "samples", $inputShader, "samples", "int");
+                ccgSE_copyAttr($sourceShader, "glossy_spread", $inputShader, "glossy_spread", "float");
+                ccgSE_copyAttr($sourceShader, "max_distance", $inputShader, "max_distance", "float");
+                ccgSE_copyAttr($sourceShader, "single_env_sample", $inputShader, "single_env_sample", "int");
+                break;
+  }
+  //dirt
+  ccgSE_copyAttr($sourceShader, "dirt_color", $inputShader, "dirt_color", "double3");
+
+  ccgSE_set_lightLists($inputShader, $lights);
+}
+
+global proc string ccgSE_mi_car_paint_phen_convert(string $inputShader, int $mode)
+{
+  global string $gCcgSE_Convertions[];
+  global string $gCcgSE_currentTemplate;
+  
+  string $shadingEngine, $bump, $lights[];
+  string $tmp[];
+  
+  if(`nodeType $inputShader`!="mi_car_paint_phen")
+  {
+    warning "Please select mi_car_paint_phen shader to convert.\n";
+    return 0;
+  }
+
+  //find $shadingEngine
+  $shadingEngine = ccgSE_find_shadingEngine($inputShader);
+  if($shadingEngine=="DANGER") {warning ("The "+$inputShader+" might be a danger shader because more than one shadingEngine had been connected! Conversion failed.\n"); return 0;}
+  else if($shadingEngine=="NULL") {warning ("The "+$inputShader+" has no shadingEngine, can't be converted!\n"); return 0;}
+
+  //find bump
+  if(`attributeExists "ambient" $inputShader`)
+  {
+    $tmp = `listConnections -d 0 -s 1 -p 1 -scn 1 ($inputShader+".ambient")`;
+    string $tok[];
+    tokenize $tmp[0] "." $tok;
+    if($tok[0]!=""){
+      if(`nodeType $tok[0]`=="mib_bump_map" || `nodeType $tok[0]`=="bump2d")  $bump = $tmp[0];
+      else {
+              if(`objExists $tok[0]`) {
+                string $pass[] = `listConnections -d 0 -s 1 -p 1 -scn 1 $tok[0]`;
+                int $i;
+                for($i=0;$i<size($pass);$i++) {
+                  string $tok1[];
+                  tokenize $pass[$i] "." $tok1;
+                  if(`nodeType $tok1[0]`=="mib_bump_map" || `nodeType $tok1[0]`=="bump2d") {
+                    $bump = $pass[$i];
+                    break;
+                  }
+                }
+              }
+          }
+     }
+  }
+  
+  //find light lists
+  $lights = ccgSE_find_lightLists($inputShader);
+
+  //create template shader and shading engine
+  string $newShadingEngine, $templateShader;
+  string $existTemplates[],$existEngines[];
+  $tmp = `listConnections -d 1 -s 0 -p 0 -scn 1 ($inputShader+".global_weight")`;
+  int $sgNum = size($tmp);
+  int $i,$j;
+  for($i=0,$j=0;$i<$sgNum;$i++)
+  {
+    if(`nodeType $tmp[$i]`=="ccg_base_template"){
+      string $shading[] = `listConnections -d 1 -s 0 -p 0 -scn 1 -type "shadingEngine" $tmp[$i]`;
+      if(size($shading)==1){
+        $existTemplates[$j] = $tmp[$i];
+        $existEngines[$j] = $shading[0];
+      }
+    }
+  }
+  if(`size $existTemplates`) 
+  {
+    if($mode==1)
+    {
+      for($i=0;$i<size($existTemplates);$i++)
+      {
+        string $keep[];
+        tokenize $bump "." $keep;
+        $keep[0]=$keep[0]+";"+$inputShader;
+        if(!`ccgSE_template_delete $existTemplates[$i] $existEngines[$i] $keep[0] ""`) {
+          warning ($existEngines[$i]+" and "+$existTemplates[$i]+" can't be deleted, convert failed!\n"); return 0;
+        }
+      }
+    }
+  }
+  $newShadingEngine = `sets -renderable true -noSurfaceShader true -empty`;
+  $templateShader = `shadingNode -asShader ccg_base_template`;
+  connectAttr ($templateShader+".message") ($newShadingEngine+".miMaterialShader");
+
+  /* build shaders */
+  
+  //build bump shader
+  if(size($bump)) connectAttr -f $bump ($templateShader+".normalMapping");
+    
+  float $dirt_weight = `getAttr ($inputShader+".dirt_weight")`;
+
+  //build diffuse shader
+  string $lambert = `shadingNode -asShader mi_car_paint_phen`;
+  ccgSE_mi_car_paint_phen_commonSet("d", $lambert, $inputShader, $lights);
+  ccgSE_copyAttr($inputShader, "diffuse_weight", $lambert, "diffuse_weight", "float");
+  ccgSE_copyAttr($inputShader, "dirt_weight", $lambert, "dirt_weight", "float");
+  ccgSE_copyAttr($inputShader, "irradiance_weight", $lambert, "irradiance_weight", "float");
+  ccgSE_copyAttr($inputShader, "global_weight", $lambert, "global_weight", "float");
+  connectAttr -f ($lambert+".message") ($templateShader+".diffuse");
+  
+  //build specular shader
+  string $specular = `shadingNode -asShader mi_car_paint_phen`;
+  ccgSE_mi_car_paint_phen_commonSet("s", $specular, $inputShader, $lights);
+  if(!`objExists ccgmiCarPaintPhen_dirt_reverse`) createNode "reverse" -n "ccgmiCarPaintPhen_dirt_reverse";
+  ccgSE_copyAttr($inputShader, "dirt_weight", "ccgmiCarPaintPhen_dirt_reverse", "inputX", "float");
+    //spec_weight
+  if(!`objExists ccgmiCarPaintPhen_spec_mult`) createNode "multiplyDivide" -n "ccgmiCarPaintPhen_spec_mult";
+  if(!`isConnected "ccgmiCarPaintPhen_dirt_reverse.outputX" "ccgmiCarPaintPhen_spec_mult.input2X"`)
+    connectAttr -f "ccgmiCarPaintPhen_dirt_reverse.outputX" "ccgmiCarPaintPhen_spec_mult.input2X";
+  ccgSE_copyAttr($inputShader, "spec_weight", "ccgmiCarPaintPhen_spec_mult", "input1X", "float");
+  if(!`isConnected "ccgmiCarPaintPhen_spec_mult.outputX" ($specular+".spec_weight")`)
+    connectAttr -f "ccgmiCarPaintPhen_spec_mult.outputX" ($specular+".spec_weight");
+    //spec_sec_weight
+  if(!`objExists ccgmiCarPaintPhen_specSec_mult`) createNode "multiplyDivide" -n "ccgmiCarPaintPhen_specSec_mult";
+  if(!`isConnected "ccgmiCarPaintPhen_dirt_reverse.outputX" "ccgmiCarPaintPhen_specSec_mult.input2X"`)
+    connectAttr -f "ccgmiCarPaintPhen_dirt_reverse.outputX" "ccgmiCarPaintPhen_specSec_mult.input2X";
+  ccgSE_copyAttr($inputShader, "spec_sec_weight", "ccgmiCarPaintPhen_specSec_mult", "input1X", "float");
+  if(!`isConnected "ccgmiCarPaintPhen_specSec_mult.outputX" ($specular+".spec_sec_weight")`)
+    connectAttr -f "ccgmiCarPaintPhen_specSec_mult.outputX" ($specular+".spec_sec_weight");  
+    //flake_weight
+  if(!`objExists ccgmiCarPaintPhen_flake_mult`) createNode "multiplyDivide" -n "ccgmiCarPaintPhen_flake_mult";
+  if(!`isConnected "ccgmiCarPaintPhen_dirt_reverse.outputX" "ccgmiCarPaintPhen_flake_mult.input2X"`)
+    connectAttr -f "ccgmiCarPaintPhen_dirt_reverse.outputX" "ccgmiCarPaintPhen_flake_mult.input2X";
+  ccgSE_copyAttr($inputShader, "flake_weight", "ccgmiCarPaintPhen_flake_mult", "input1X", "float");
+  if(!`isConnected "ccgmiCarPaintPhen_flake_mult.outputX" ($specular+".flake_weight")`)
+    connectAttr -f "ccgmiCarPaintPhen_flake_mult.outputX" ($specular+".flake_weight");
+  ccgSE_copyAttr($inputShader, "global_weight", $specular, "global_weight", "float");
+  connectAttr -f ($specular+".message") ($templateShader+".specular");
+
+  //build reflect shader
+  string $reflect = `shadingNode -asShader mi_car_paint_phen`;
+  ccgSE_mi_car_paint_phen_commonSet("r", $reflect, $inputShader, $lights);
+  	//reflection_edge_weight
+  if(!`objExists ccgmiCarPaintPhen_reflectEdge_mult`) createNode "multiplyDivide" -n "ccgmiCarPaintPhen_reflectEdge_mult";
+  if(!`isConnected "ccgmiCarPaintPhen_dirt_reverse.outputX" "ccgmiCarPaintPhen_reflectEdge_mult.input2X"`)
+    connectAttr -f "ccgmiCarPaintPhen_dirt_reverse.outputX" "ccgmiCarPaintPhen_reflectEdge_mult.input2X";
+  ccgSE_copyAttr($inputShader, "reflection_edge_weight", "ccgmiCarPaintPhen_reflectEdge_mult", "input1X", "float");
+  if(!`isConnected "ccgmiCarPaintPhen_reflectEdge_mult.outputX" ($reflect+".reflection_edge_weight")`)
+    connectAttr -f "ccgmiCarPaintPhen_reflectEdge_mult.outputX" ($reflect+".reflection_edge_weight");
+    //reflection_base_weight
+  if(!`objExists ccgmiCarPaintPhen_reflectBase_mult`) createNode "multiplyDivide" -n "ccgmiCarPaintPhen_reflectBase_mult";
+  if(!`isConnected "ccgmiCarPaintPhen_dirt_reverse.outputX" "ccgmiCarPaintPhen_reflectBase_mult.input2X"`)
+    connectAttr -f "ccgmiCarPaintPhen_dirt_reverse.outputX" "ccgmiCarPaintPhen_reflectBase_mult.input2X";
+  ccgSE_copyAttr($inputShader, "reflection_base_weight", "ccgmiCarPaintPhen_reflectBase_mult", "input1X", "float");
+  if(!`isConnected "ccgmiCarPaintPhen_reflectBase_mult.outputX" ($reflect+".reflection_base_weight")`)
+    connectAttr -f "ccgmiCarPaintPhen_reflectBase_mult.outputX" ($reflect+".reflection_base_weight");
+  connectAttr -f ($reflect+".message") ($templateShader+".reflection");
+
+  //set template attributes
+  setAttr ($templateShader+".overallColor") -type double3 1 1 1;
+  setAttr ($templateShader+".color") -type double3 1 1 1;
+  
+  //add extra attribute
+  addAttr -ln "convert_type" -dt "string"  $templateShader;
+  setAttr -type "string" ($templateShader+".convert_type") "mi_car_paint_phen";
+  addAttr -ln "keepTouch"  -at double $templateShader;
+  connectAttr -f ($inputShader+".global_weight") ($templateShader+".keepTouch");
+  addAttr -ln "convert_from" -dt "string"  $templateShader;
+  setAttr -type "string" ($templateShader+".convert_from") $inputShader;
+
+  int $gSize = size($gCcgSE_Convertions);
+  $gCcgSE_Convertions[$gSize] = $templateShader;
+  //print ("mi_car_paint_phen shader \""+$inputShader+"\" has been successfully converted to the \""+$templateShader+"\"\n");
+  
+  $gCcgSE_currentTemplate = $templateShader;
+  return 1;
+}
+
+
+global proc ccgSE_mi_car_paint_phen_delete(string $shader, string $engine)
+{
+  string $bump, $exclude;
+  if(`objExists $shader`&&`objExists $engine`){
+    if(`attributeExists "normalMapping" $shader`)
+    {
+      string $tmp[] = `listConnections -d 0 -s 1 -scn 1 ($shader+".normalMapping")`;
+      if($tmp[0]!="") $bump = $tmp[0];
+    }
+    if(`attributeExists "keepTouch" $shader`){
+      string $fromShader[] = `listConnections -d 0 -s 1 -scn 1 ($shader+".keepTouch")`;
+      if($fromShader[0]!=""){
+        string $excludeArray[] = `listConnections -d 0 -s 1 -scn 1 $fromShader[0]`;
+        $excludeArray[size($excludeArray)] = $fromShader[0];
+        if($bump!="") $excludeArray[size($excludeArray)] = $bump;
+        $excludeArray = stringArrayRemoveDuplicates($excludeArray);
+        int $i;
+        for($i=0;$i<size($excludeArray);$i++)
+          $exclude += $excludeArray[$i] + ";";
+        $exclude = startString($exclude, (size($exclude)-1));
+      }
+    }
+    if(`objExists ccgmiCarPaintPhen_dirt_reverse`) delete ccgmiCarPaintPhen_dirt_reverse;
+    if(`objExists ccgmiCarPaintPhen_spec_mult`) delete ccgmiCarPaintPhen_spec_mult;
+    if(`objExists ccgmiCarPaintPhen_specSec_mult`) delete ccgmiCarPaintPhen_specSec_mult;
+    if(`objExists ccgmiCarPaintPhen_flake_mult`) delete ccgmiCarPaintPhen_flake_mult;
+    if(`objExists ccgmiCarPaintPhen_reflectEdge_mult`) delete ccgmiCarPaintPhen_reflectEdge_mult;
+    if(`objExists ccgmiCarPaintPhen_reflectBase_mult`) delete ccgmiCarPaintPhen_reflectBase_mult;
+    ccgSE_template_delete($shader,$engine,$exclude,"");
+  }
+}

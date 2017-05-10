@@ -1,0 +1,201 @@
+global proc string[] ccgSE_mia_material_x_resultslist()
+{
+  string $lists[] = {
+    "result","resultA",
+    "diffuse_result",
+    "diffuse_resultA",
+    "diffuse_raw",
+    "diffuse_rawA",
+    "diffuse_level",
+    "diffuse_levelA",
+    "spec_result",
+    "spec_resultA",
+    "spec_raw",
+    "spec_rawA",
+    "spec_level",
+    "spec_levelA",
+    "refl_result",
+    "refl_resultA",
+    "refl_raw",
+    "refl_rawA",
+    "refl_level",
+    "refl_levelA",
+    "refr_result",
+    "refr_resultA",
+    "refr_raw",
+    "refr_rawA",
+    "refr_level",
+    "refr_levelA",
+    "tran_result",
+    "tran_resultA",
+    "tran_raw",
+    "tran_rawA",
+    "tran_level",
+    "tran_levelA",
+    "indirect_result",
+    "indirect_resultA",
+    "indirect_raw",
+    "indirect_rawA",
+    "indirect_post_ao",
+    "indirect_pose_aoA",
+    "ao_raw",
+    "ao_rawA",
+    "add_result",
+    "add_resultA",
+    "opacity_result",
+    "opacity_resultA",
+    "opacity_raw",
+    "opacity_rawA",
+    "opacity"
+  };
+  
+  return $lists;
+}
+
+global proc string ccgSE_mia_material_x_diffuseWithoutShadow(string $inputShader)
+{
+  string $diffuse = $inputShader+"_ccg_diffuse_conversion";
+  if(`objExists $diffuse`) return $diffuse;
+  duplicate -rr -ic -name $diffuse $inputShader;
+  setAttr ($diffuse+".multiple_outputs") 1;
+  setAttr ($diffuse+".reflectivity") 0;
+  setAttr ($diffuse+".refl_gloss") 1;
+  setAttr ($diffuse+".refr_gloss") 1;
+  setAttr ($diffuse+".ao_on") 0;
+  setAttr ($diffuse+".refr_translucency") 0;
+  setAttr ($diffuse+".refl_interpolate") 0;
+  setAttr ($diffuse+".refr_interpolate") 0;
+  return $diffuse;
+}
+
+global proc string ccgSE_mia_material_x_convert(string $inputShader, int $mode)
+{
+  global string $gCcgSE_Convertions[];
+  global string $gCcgSE_currentTemplate;
+  
+  if(`nodeType $inputShader`!="mia_material_x"){
+    warning "Please select mia_material_x shader to convert.\n";
+    return 0;
+  }
+  
+  string $shadingEngine;
+  //find $shadingEngine
+  $shadingEngine = ccgSE_find_shadingEngine($inputShader);
+  if($shadingEngine=="DANGER") {warning ("The "+$inputShader+" might be a danger shader because more than one shadingEngine had been connected! Conversion failed.\n"); return 0;}
+  else if($shadingEngine=="NULL") {warning ("The "+$inputShader+" has no shadingEngine, can't be converted!\n"); return 0;}
+
+  string $lights[];
+  //find light lists
+  $lights = ccgSE_find_lightLists($inputShader);
+
+  //create template shader and shading engine
+  string $longtmp[], $tmp[];
+  $longtmp = `listConnections -d 1 -s 0 -scn 1 -type "ccg_base_template_x" $inputShader`;
+  $tmp = stringArrayRemoveDuplicates($longtmp);
+  int $tmpSize = size($tmp);
+  int $i,$j,$k;
+  string $existsTemplates[],$existsMath[], $existsTemplateEngines[];
+  for($i=0,$j=0,$k=0;$i<$tmpSize;$i++)
+  {
+      string $engines[] = `listConnections -d 1 -s 0 -scn 1 -type "shadingEngine" $tmp[$i]`;
+      if(`size $engines`==1){
+        $existsTemplates[$j] = $tmp[$i];
+        $existsTemplateEngines[$j] = $engines[0];
+        $j++;
+        string $tmpMath[] = `listConnections -d 0 -s 1 -scn 1 -type "ccg_simple_math" $tmp[$i]`;
+        int $o;
+        for($o=0;$o<size($tmpMath);$o++){
+          $existsMath[$k] = $tmpMath[$o];
+          $k++;
+        }
+      }
+  }
+  
+  if(`size $existsTemplates`) 
+  {
+    if($mode==1)
+    {
+      int $m;
+      for($m=0;$m<`size $existsMath`;$m++)
+        if(`objExists $existsMath[$m]`) delete $existsMath[$m];
+      for($m=0;$m<`size $existsTemplates`;$m++)
+        if(`objExists $existsTemplates[$m]`) delete $existsTemplates[$m];
+      for($m=0;$m<`size $existsTemplateEngines`;$m++)
+        if(`objExists $existsTemplateEngines[$m]`) delete $existsTemplateEngines[$m];
+      if(`objExists ($inputShader+"_ccg_diffuse_conversion")`) delete ($inputShader+"_ccg_diffuse_conversion");
+    }
+  }
+  string $newShadingEngine, $templateShader;
+  $newShadingEngine = `sets -renderable true -noSurfaceShader true -empty`;
+  $templateShader = `shadingNode -asShader ccg_base_template_x`;
+  connectAttr ($templateShader+".message") ($newShadingEngine+".miMaterialShader");
+
+  //set and connect attributes
+  setAttr ($inputShader+".multiple_outputs") 1;
+  connectAttr -f ($inputShader+".diffuse_level") ($templateShader+".color");
+  string $mathNode = `createNode ccg_simple_math`;
+  setAttr ($mathNode+".operation_color") 3;
+  connectAttr -f ($inputShader+".diffuse_result") ($mathNode+".colors[0]");
+  connectAttr -f ($inputShader+".diffuse_level")  ($mathNode+".colors[1]");
+  connectAttr -f ($mathNode+".color_result")      ($templateShader+".diffuse");
+  string $diffuse = ccgSE_mia_material_x_diffuseWithoutShadow($inputShader);
+  $mathNode = `createNode ccg_simple_math`;
+  setAttr ($mathNode+".operation_color") 3;
+  connectAttr -f ($diffuse+".diffuse_result")     ($mathNode+".colors[0]");
+  connectAttr -f ($diffuse+".diffuse_level")      ($mathNode+".colors[1]");
+  connectAttr -f ($mathNode+".color_result")      ($templateShader+".diffuse_without_shadow");
+  connectAttr -f ($inputShader+".spec_result")    ($templateShader+".specular");
+  connectAttr -f ($inputShader+".refl_result")    ($templateShader+".reflection");
+  connectAttr -f ($inputShader+".refl_resultA")   ($templateShader+".reflectionA");
+  connectAttr -f ($inputShader+".refr_result")    ($templateShader+".refraction");
+  connectAttr -f ($inputShader+".refr_resultA")   ($templateShader+".refractionA");
+  connectAttr -f ($inputShader+".tran_result")    ($templateShader+".translucency");
+  connectAttr -f ($inputShader+".tran_resultA")   ($templateShader+".translucencyA");
+  connectAttr -f ($inputShader+".indirect_raw")   ($templateShader+".globalIllum");
+  connectAttr -f ($inputShader+".indirect_rawA")  ($templateShader+".globalIllumA");
+  connectAttr -f ($inputShader+".ao_raw")         ($templateShader+".ambientOcclusion");
+  connectAttr -f ($inputShader+".ao_rawA")        ($templateShader+".ambientOcclusionA");
+  //connection between mia_material_x and *_ccg_diffuse_conversion
+  connectAttr -f ($inputShader+".diffuse_weight") ($inputShader+"_ccg_diffuse_conversion.diffuse_weight");
+  connectAttr -f ($inputShader+".diffuse") ($inputShader+"_ccg_diffuse_conversion.diffuse");
+  connectAttr -f ($inputShader+".diffuse_roughness") ($inputShader+"_ccg_diffuse_conversion.diffuse_roughness");
+  //connect shadow shader and photon shader from mia_material_x to template shading engine
+  connectAttr -f ($inputShader+".message") ($newShadingEngine+".miShadowShader");
+  connectAttr -f ($inputShader+".message") ($newShadingEngine+".miPhotonShader");
+
+  //create light lists
+  ccgSE_set_lightLists($templateShader, $lights);
+  
+  //add extra attribute
+  addAttr -ln "convert_type" -dt "string"  $templateShader;
+  setAttr -type "string" ($templateShader+".convert_type") "mia_material_x";
+  addAttr -ln "keepTouch"  -at double $templateShader;
+  connectAttr -f ($inputShader+".diffuse_weight") ($templateShader+".keepTouch");
+  addAttr -ln "convert_from" -dt "string"  $templateShader;
+  setAttr -type "string" ($templateShader+".convert_from") $inputShader;
+
+  int $gSize = size($gCcgSE_Convertions);
+  $gCcgSE_Convertions[$gSize] = $templateShader;
+  //print ("misss_fast_skin_maya shader \""+$inputShader+"\" has been successfully converted to the \""+$templateShader+"\"\n");
+  
+  $gCcgSE_currentTemplate = $templateShader;
+  return 1;
+}
+
+
+global proc ccgSE_mia_material_x_delete(string $shader, string $engine)
+{
+  string $orig[] = `listConnections -d 0 -s 1 -scn 1 -type "mia_material_x" $shader`;
+  string $shortOrig[] = stringArrayRemoveDuplicates($orig);
+  if(size($shortOrig)==1){
+    if(`objExists ($shortOrig[0]+"_ccg_diffuse_conversion")`) delete ($shortOrig[0]+"_ccg_diffuse_conversion");
+    string $mathNodes[] = `listConnections -d 0 -s 1 -scn 1 -type "ccg_simple_math" $shader`;
+    int $i;
+    for($i=0;$i<`size $mathNodes`;$i++)
+    {
+      if($mathNodes[$i]!="" && `objExists $mathNodes[$i]`) delete $mathNodes[$i];
+    }
+    if(`objExists $shader`) delete $shader;
+    if(`objExists $engine`) delete $engine;
+  }
+}

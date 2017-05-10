@@ -1,0 +1,1395 @@
+declare shader
+  color "ccg_base_lambert" (
+    color   "color",        #: default 0.5 0.5 0.5
+    color   "transparency",
+    color   "ambient",
+    color   "incandescence",
+    vector    "normalMapping",
+    scalar    "diffuse",        #: softmin 0 softmax 1 default 0.8
+    integer	"ibl_enable",				#: enum "Disabled:Environment:Light Array:Diffuse" default 0
+    color		"bent",
+    integer	"bent_space",				#: enum "World:Camera:Object:No Change" default 0
+    integer	"ibl_shadow_mode",	#: enum "Occlusion:Object Block:No Shadow" default 0
+    scalar	"min_dist",					#: default 0
+    scalar	"max_dist",					#: default 1
+    color		"ibl_bright",				#: default 1 1 1
+    color		"ibl_dark",					#: default 0 0 0
+    boolean	"ibl_emit_diffuse",	#: default on
+    scalar	"ibl_angle",				#: min 0 max 180 default 180
+    color		"ambientOcclusion",	#: default 1 1 1
+    color		"reflectOcclusion",	#: default 1 1 1
+    boolean	"add_to_combined",	#: default false
+    scalar    "depthLimitMin",      #: min 0 default 0
+    scalar    "depthLimitMax",      #: min 0.001 default 20
+    integer   "layer",
+    #: enum "None:Combined:Color:Diffuse:Ambient:Specular:Incandescence:Reflection:Refraction:Z:Normal:Occlusion:Shadow:Velocity:UV:ObjectID:MaterialID:Reflection Occlusion:Refraction Occlusion:Global Illumination:Translucent:SSS Front:SSS Middle:SSS Back" default 1
+    boolean		"enableTransPasses",
+    boolean   "passesInOnce",		#: default false
+    boolean		"diffuseOpacity",
+    string    "fbWriteString",
+    boolean		"disableShadowChain",
+    integer   "mode",
+    array light "lights"
+  )
+  version 1
+  apply material
+  #: nodeid 8173101
+end declare
+
+declare shader
+  color "ccg_base_blinn" (
+    color   "color",        #: default 0.5 0.5 0.5
+    color   "transparency",
+    color   "ambient",
+    color   "incandescence",
+    vector    "normalMapping",
+    scalar    "diffuse",        #: softmin 0 softmax 1 default 0.8
+    scalar    "eccentricity",     #: min 0 max 0.999 default 0.3
+    scalar    "specularRolloff",    #: softmin 0 softmax 1 default 0.7
+    color   "specular",       #: default 0.5 0.5 0.5
+    color   "reflectivity",     #: default 0.5 0.5 0.5
+    color   "reflectedColor",
+    integer "insideReflectLimit", #: softmin 0 softmax 10 default 2
+    boolean   "disableRayRefl",
+    integer "fresnel_mode",
+    #: enum "None:Mental Ray Fresnel:Standard Fresnel" default 0
+    scalar	"fresnel_min",			#: softmin 0 softmax 1 default 0
+    scalar	"fresnel_max",			#: softmin 0 softmax 1 default 1
+    scalar	"n_incidence",			#: softmin 1 softmax 2.5  default 1.0
+    scalar	"n_transmission",		#: softmin 1.2 softmax 2.5  default 2.2
+    boolean	"fresnel_diffuse",	#: default on
+    boolean "fresnel_specular",	#: default on
+    scalar	"refractiveIndex",	#: default 1.0
+    color		"refractedColor",		#: default 1 1 1
+    integer	"ibl_enable",				#: enum "Disabled:Environment:Light Array:Diffuse" default 0
+    color		"bent",
+    integer	"bent_space",				#: enum "World:Camera:Object:No Change" default 0
+    integer	"ibl_shadow_mode",	#: enum "Occlusion:Object Block:No Shadow" default 0
+    scalar	"min_dist",					#: default 0
+    scalar	"max_dist",					#: default 1
+    color		"ibl_bright",				#: default 1 1 1
+    color		"ibl_dark",					#: default 0 0 0
+    boolean	"ibl_emit_diffuse",	#: default on
+    boolean	"ibl_emit_specular",#: default on
+    scalar	"ibl_angle",				#: min 0 max 180 default 180
+    color		"ambientOcclusion",	#: default 1 1 1
+    color		"reflectOcclusion",	#: default 1 1 1
+    boolean	"add_to_combined",	#: default false
+    # layers parameters
+    scalar    "depthLimitMin",      #: min 0 default 0
+    scalar    "depthLimitMax",      #: min 0.001 default 20
+    integer   "layer",
+    #: enum "None:Combined:Color:Diffuse:Ambient:Specular:Incandescence:Reflection:Refraction:Z:Normal:Occlusion:Shadow:Velocity:UV:ObjectID:MaterialID:Reflection Occlusion:Refraction Occlusion:Global Illumination:Translucent:SSS Front:SSS Middle:SSS Back" default 1
+    boolean		"enableTransPasses",
+    boolean   "passesInOnce",		#: default false
+    boolean		"diffuseOpacity",
+    string    "fbWriteString",
+    boolean		"disableShadowChain",
+    integer   "mode",
+    array light "lights"
+  )
+  version 1
+  apply material
+  #: nodeid 8173102
+end declare
+
+declare shader
+  color "ccg_base_phong" (
+    color   "color",        #: default 0.5 0.5 0.5
+    color   "transparency",
+    color   "ambient",
+    color   "incandescence",
+    vector    "normalMapping",
+    scalar    "diffuse",        #: softmin 0 softmax 1 default 0.8
+    scalar    "cosinePower",      #: min 2 softmax 100 default 20
+    color   "specular",       #: default 0.5 0.5 0.5
+    color   "reflectivity",     #: default 0.5 0.5 0.5
+    color   "reflectedColor",
+    integer "insideReflectLimit", #: softmin 0 softmax 10 default 2
+    boolean   "disableRayRefl",
+    integer "fresnel_mode",
+    #: enum "None:Mental Ray Fresnel:Standard Fresnel" default 0
+    scalar	"fresnel_min",			#: softmin 0 softmax 1 default 0
+    scalar	"fresnel_max",			#: softmin 0 softmax 1 default 1
+    scalar	"n_incidence",			#: softmin 1 softmax 2.5  default 1.0
+    scalar	"n_transmission",		#: softmin 1.2 softmax 2.5  default 2.2
+    boolean	"fresnel_diffuse",	#: default on
+    boolean "fresnel_specular",	#: default on
+    scalar	"refractiveIndex",	#: default 1.0
+    color		"refractedColor",		#: default 1 1 1
+    integer	"ibl_enable",				#: enum "Disabled:Environment:Light Array:Diffuse" default 0
+    color		"bent",
+    integer	"bent_space",				#: enum "World:Camera:Object:No Change" default 0
+    integer	"ibl_shadow_mode",	#: enum "Occlusion:Object Block:No Shadow" default 0
+    scalar	"min_dist",					#: default 0
+    scalar	"max_dist",					#: default 1
+    color		"ibl_bright",				#: default 1 1 1
+    color		"ibl_dark",					#: default 0 0 0
+    boolean	"ibl_emit_diffuse",	#: default on
+    boolean	"ibl_emit_specular",#: default on
+    scalar	"ibl_angle",				#: min 0 max 180 default 180
+    color		"ambientOcclusion",	#: default 1 1 1
+    color		"reflectOcclusion",	#: default 1 1 1
+    boolean	"add_to_combined",	#: default false
+    scalar    "depthLimitMin",      #: min 0 default 0
+    scalar    "depthLimitMax",      #: min 0.001 default 20
+    integer   "layer",
+    #: enum "None:Combined:Color:Diffuse:Ambient:Specular:Incandescence:Reflection:Refraction:Z:Normal:Occlusion:Shadow:Velocity:UV:ObjectID:MaterialID:Reflection Occlusion:Refraction Occlusion:Global Illumination:Translucent:SSS Front:SSS Middle:SSS Back" default 1
+    boolean		"enableTransPasses",
+    boolean   "passesInOnce",		#: default false
+    boolean		"diffuseOpacity",
+    string    "fbWriteString",
+    boolean		"disableShadowChain",
+    integer   "mode",
+    array light "lights"
+  )
+  version 1
+  apply material
+  #: nodeid 8173103
+end declare
+
+declare shader
+  color "ccg_base_surface" (
+    color   "color",        #: default 0.5 0.5 0.5
+    color   "transparency",
+    color   "matteOpacity",
+    scalar    "depthLimitMin",      #: min 0 default 0
+    scalar    "depthLimitMax",      #: min 0.001 default 20
+    integer   "layer",
+    #: enum "None:Combined:Color:Diffuse:Ambient:Specular:Incandescence:Reflection:Refraction:Z:Normal:Occlusion:Shadow:Velocity:UV:ObjectID:MaterialID:Reflection Occlusion:Refraction Occlusion:Global Illumination:Translucent:SSS Front:SSS Middle:SSS Back" default 1
+    boolean   "passesInOnce",				#: default false
+    string    "fbWriteString",
+    boolean		"disableShadowChain"
+  )
+  version 1
+  apply material
+  #: nodeid 8173104
+end declare
+
+declare shader
+  color "ccg_base_ward" (
+    color   "color",        #: default 0.5 0.5 0.5
+    color   "transparency",
+    color   "ambient",
+    color   "incandescence",
+    vector    "normalMapping",
+    scalar    "diffuse",        #: softmin 0 softmax 1 default 0.8
+    scalar    "angle",     #: min 0 max 360 default 0
+    scalar    "xroughness",    #: softmin 0 softmax 1 default 0.3
+    scalar    "yroughness",    #: softmin 0 softmax 1 default 0.1
+    boolean	"externalUV",			#: default false
+    vector	"U",
+    vector	"V",
+    color   "specular",       #: default 0.5 0.5 0.5
+    color   "reflectivity",     #: default 0.5 0.5 0.5
+    color   "reflectedColor",
+    integer "insideReflectLimit", #: softmin 0 softmax 10 default 2
+    boolean   "disableRayRefl",
+    integer "fresnel_mode",
+    #: enum "None:Mental Ray Fresnel:Standard Fresnel" default 0
+    scalar	"fresnel_min",			#: softmin 0 softmax 1 default 0
+    scalar	"fresnel_max",			#: softmin 0 softmax 1 default 1
+    scalar	"n_incidence",			#: softmin 1 softmax 2.5  default 1.0
+    scalar	"n_transmission",		#: softmin 1.2 softmax 2.5  default 2.2
+    boolean	"fresnel_diffuse",	#: default on
+    boolean "fresnel_specular",	#: default on
+    scalar	"refractiveIndex",	#: default 1.0
+    color		"refractedColor",		#: default 1 1 1
+    integer	"ibl_enable",				#: enum "Disabled:Environment:Light Array:Diffuse" default 0
+    color		"bent",
+    integer	"bent_space",				#: enum "World:Camera:Object:No Change" default 0
+    integer	"ibl_shadow_mode",	#: enum "Occlusion:Object Block:No Shadow" default 0
+    scalar	"min_dist",					#: default 0
+    scalar	"max_dist",					#: default 1
+    color		"ibl_bright",				#: default 1 1 1
+    color		"ibl_dark",					#: default 0 0 0
+    boolean	"ibl_emit_diffuse",	#: default on
+    boolean	"ibl_emit_specular",#: default on
+    scalar	"ibl_angle",				#: min 0 max 180 default 180
+    color		"ambientOcclusion",	#: default 1 1 1
+    color		"reflectOcclusion",	#: default 1 1 1
+    boolean	"add_to_combined",	#: default false
+    # layers parameters
+    scalar    "depthLimitMin",      #: min 0 default 0
+    scalar    "depthLimitMax",      #: min 0.001 default 20
+    integer   "layer",
+    #: enum "None:Combined:Color:Diffuse:Ambient:Specular:Incandescence:Reflection:Refraction:Z:Normal:Occlusion:Shadow:Velocity:UV:ObjectID:MaterialID:Reflection Occlusion:Refraction Occlusion:Global Illumination:Translucent:SSS Front:SSS Middle:SSS Back" default 1
+    boolean		"enableTransPasses",
+    boolean   "passesInOnce",			#: default false
+    boolean		"diffuseOpacity",
+    string    "fbWriteString",
+    boolean		"disableShadowChain",
+    integer   "mode",
+    array light "lights"
+  )
+  version 1
+  apply material
+  #: nodeid 8173105
+end declare
+
+declare shader
+  color "ccg_base_useBackground" (
+    color   "specularColor",        #: default 0 0 0
+    scalar  "reflectivity",					#: default 0
+    scalar	"shadowMask",						#: default 1
+    boolean	"traceObject",					#: default false
+    integer	"matteOpacityMode", 		#: enum "Solid Matte:Opacity Gain" default 1
+    scalar 	"matteOpacity",					#: default 1
+    integer	"ibl_enable",				#: enum "Disabled:Environment:Light Array:Diffuse" default 0
+    color		"bent",
+    integer	"bent_space",				#: enum "World:Camera:Object:No Change" default 0
+    integer	"ibl_shadow_mode",	#: enum "Occlusion:Object Block:No Shadow" default 0
+    scalar	"min_dist",					#: default 0
+    scalar	"max_dist",					#: default 1
+    color		"ibl_bright",				#: default 1 1 1
+    color		"ibl_dark",					#: default 0 0 0
+    boolean	"ibl_emit_diffuse",	#: default on
+ 		scalar	"ibl_angle",				#: min 0 max 180 default 180
+    # layers parameters
+    scalar    "depthLimitMin",      #: min 0 default 0
+    scalar    "depthLimitMax",      #: min 0.001 default 20
+    integer   "layer",
+    #: enum "None:Combined:Color:Diffuse:Ambient:Specular:Incandescence:Reflection:Refraction:Z:Normal:Occlusion:Shadow:Velocity:UV:ObjectID:MaterialID:Reflection Occlusion:Refraction Occlusion:Global Illumination:Translucent:SSS Front:SSS Middle:SSS Back" default 1
+    boolean   "passesInOnce",				#: default false
+    string    "fbWriteString",
+    integer   "mode",
+    array light "lights"
+  )
+  version 1
+  apply material
+  #: nodeid 8173106
+end declare
+
+declare shader
+  color "ccg_base_template" (
+  	integer	"blendMode",		#: enum "Add:Screen" default 0
+    color   "color",        #: default 1 1 1
+    color		"overallColor",	#: default 1 1 1
+    color   "transparency",
+    color   "ambient",
+    color   "incandescence",
+    shader  "diffuse",
+    vector	"normalMapping",
+    shader  "specular",
+    color		"reflectivity",	#: default 1 1 1
+    shader  "reflection",
+    scalar  "refractiveIndex",	#: default 1.0
+    color		"refractedColor",		#: default 1 1 1
+    shader	"refraction",
+    boolean	"useRefractionShader", #: default true
+    color		"sss_multiply",			#: default 1 1 1
+    shader	"sss_front",
+    shader	"sss_middle",
+    shader	"sss_back",
+    color		"translucencyMultiply", #: default 1 1 1
+		shader	"translucency",
+		color		"globalIllumMultiply",	#: default 1 1 1
+		shader	"globalIllum",
+		boolean	"useGlobalIllumShader",
+    color		"ambientOcclusion",	#: default 1 1 1
+    color		"reflectOcclusion",	#: default 1 1 1
+    boolean	"add_to_combined",	#: default false
+    # layers parameters
+    scalar    "depthLimitMin",      #: min 0 default 0
+    scalar    "depthLimitMax",      #: min 0.001 default 20
+    integer   "layer",
+    #: enum "None:Combined:Color:Diffuse:Ambient:Specular:Incandescence:Reflection:Refraction:Z:Normal:Occlusion:Shadow:Velocity:UV:ObjectID:MaterialID:Reflection Occlusion:Refraction Occlusion:Global Illumination:Translucent:SSS Front:SSS Middle:SSS Back" default 1
+    boolean		"enableTransPasses",
+    boolean   "passesInOnce",				#: default false
+    boolean		"diffuseOpacity",
+    boolean		"optimal",						#: default true
+    string    "fbWriteString",
+    boolean		"disableShadowChain"
+  )
+  version 1
+  apply material
+  #: nodeid 8173107
+end declare
+
+declare shader
+  color "ccg_base_template_x" (
+  	integer	"blendMode",		#: enum "Add:Screen" default 0
+    color   "color",        #: default 1 1 1
+    color		"overallColor",	#: default 1 1 1
+    color   "transparency",
+    color   "ambient",
+    color   "incandescence",
+    color  	"diffuse",
+    color		"diffuse_without_shadow",
+    vector	"normalMapping",
+    color	  "specular",
+    color		"reflectivity",	#: default 1 1 1
+    color	  "reflection",
+    scalar  "refractiveIndex",	#: default 1.0
+    color		"refractedColor",		#: default 1 1 1
+    color		"refraction",
+    boolean	"useRefractionShader",	#: default true
+    color		"sss_multiply",			#: default 1 1 1
+    color		"sss_front",
+    color		"sss_middle",
+    color		"sss_back",
+    color		"translucencyMultiply",	#: default 1 1 1
+    color		"translucency",
+    color		"globalIllumMultiply",	#: default 1 1 1
+    color		"globalIllum",
+    boolean	"useGlobalIllumShader",	#: default true
+    color		"ambientOcclusion",	#: default 1 1 1
+    color		"reflectOcclusion",	#: default 1 1 1
+    boolean	"add_to_combined",	#: default false
+    # layers parameters
+    scalar    "depthLimitMin",      #: min 0 default 0
+    scalar    "depthLimitMax",      #: min 0.001 default 20
+    integer   "layer",
+    #: enum "None:Combined:Color:Diffuse:Ambient:Specular:Incandescence:Reflection:Refraction:Z:Normal:Occlusion:Shadow:Velocity:UV:ObjectID:MaterialID:Reflection Occlusion:Refraction Occlusion:Global Illumination:Translucent:SSS Front:SSS Middle:SSS Back" default 1
+   	boolean		"enableTransPasses",
+    boolean   "passesInOnce",				#: default false
+    boolean		"diffuseOpacity",
+    boolean		"optimal",						#: default true
+    string    "fbWriteString",
+    boolean		"disableShadowChain"
+  )
+  version 1
+  apply material
+  #: nodeid 8173108
+end declare
+
+declare shader
+    "ccg_output_exr" (
+    string  "filename",
+    integer "format",
+    #: enum "EXR:RLA:TIFF_COMPRESSED:TIFF:TARGA:IFF" default 0
+    integer "padding",      #: min 1 max 5 default 3
+    integer "compression",
+    #: enum "DEFAULT:NONE:PIZ:ZIP:RLE:PXR24" default 1
+    string "fbWriteString"
+  )
+  version 1
+  apply output
+  #: nodeid 8173501
+end declare
+
+declare shader
+    "ccg_output_bezier_clamp" (
+    boolean		"enable",			#: default true
+    scalar		"clamp_min",	#: min 0 softmax 1 default 0.83
+    scalar		"clamp_max",	#: min 0 softmax 1 default 1
+    scalar		"extract_range",	#: min 0 softmin 1.001 softmax 7 default 5
+    scalar		"curvature",	#: softmin 0 softmax 1 default 0.2
+    scalar		"power",				#: softmin 0.8 softmax 1.2 default 1
+    string		"extractPasses"
+  )
+  version 1
+  apply output
+  #: nodeid 8173502
+end declare
+
+declare shader
+  geometry "ccg_geo_framebuffer" (
+	boolean	"enable",		#: default true
+    string  "filename",
+    integer "format",
+    #: enum "EXR:RLA:TIFF_COMPRESSED:TIFF:TARGA:IFF" default 0
+    boolean	"Enable_Multi_channel_OpenExr",
+	boolean "enableSubFolder",	#: default true
+    integer "padding",      #: min 1 max 5 default 3
+    integer "compression",
+    #: enum "DEFAULT:NONE:PIZ:ZIP:RLE:PXR24" default 1
+    string "fbWriteString",
+    integer "type_fb_1",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_2",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_3",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_4",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_5",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_6",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_7",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_8",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_9",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_10",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_11",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_12",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_13",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_14",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_15",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_16",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_17",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_18",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_19",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_20",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_21",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_22",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_23",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_24",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+	integer "type_fb_25",	#: enum "rgba:rgba_16:rgba_fp:rgb:rgb_16:rgb_fp:a:a_16:a_fp:z:n:m:tag:coverage" default 2
+    boolean "filter_1",      #: default true
+	boolean "filter_2",      #: default true
+	boolean "filter_3",      #: default true
+	boolean "filter_4",      #: default true
+	boolean "filter_5",      #: default true
+	boolean "filter_6",      #: default true
+	boolean "filter_7",      #: default true
+	boolean "filter_8",      #: default true
+	boolean "filter_9",      #: default true
+	boolean "filter_10",      #: default true
+	boolean "filter_11",      #: default true
+	boolean "filter_12",      #: default true
+	boolean "filter_13",      #: default true
+	boolean "filter_14",      #: default true
+	boolean "filter_15",      #: default true
+	boolean "filter_16",      #: default true
+	boolean "filter_17",      #: default true
+	boolean "filter_18",      #: default true
+	boolean "filter_19",      #: default true
+	boolean "filter_20",      #: default true
+	boolean "filter_21",      #: default true
+	boolean "filter_22",      #: default true
+	boolean "filter_23",      #: default true
+	boolean "filter_24",      #: default true
+	boolean "filter_25"      #: default true
+  )
+  version 2
+  apply geometry
+  #: nodeid 8174301
+end declare
+
+declare shader
+  geometry "ccg_geo_ibl" (
+  	# texture
+  	color texture	"texture",
+  	integer		"tex_changeUV",			#: enum "No change:Reverse U:Reverse V:Reverse U&V:Swap U&V" default 4
+  	vector		"rotate",						#: default 0 0 0
+		vector		"tex_rotate",				#: default 0 0 0
+		scalar		"gamma",						#: min 0.001 softmin 0.4545 softmax 2.2 default 1
+		scalar		"exposure",					#: softmin 0 softmax 10 default 1
+		scalar		"offset",						#: softmin -10 softmax 10 default 0
+		integer		"contrastType",			#: enum "contrastLuminance:contrastRGB" default 0 
+		scalar		"contrastValue",		#: softmin 0 softmax 10 default 1
+		scalar		"contrastCenter",		#: softmin 0 softmax 1 default 0.5
+		integer		"correctOrder",			#: enum "EOC:ECO:OEC:OCE:CEO:COE" default 0
+		color			"multiply",					#: default 1 1 1 1
+		scalar		"clamp_low",				#: softmin 0 softmax 1 default 0
+		scalar		"clamp_hi",					#: softmin 0 softmax 1 default 0
+  	# light array
+  	integer		"light_mode",				#: enum "UV sample:Points evenly sample:Points data file" default 1
+  	string		"light_points_file",
+  	integer		"half_sphere",			#: enum "Entire:Sky:Ground" default 0
+  	scalar		"radius",						#: min 0.001 softmax 1000 default 100
+  	integer		"sampleU",					#: min 2 softmax 20 default 10
+  	integer		"sampleV",					#: min 2 softmax 20 default 10
+  	integer		"sampleNumber",			#: min 1 softmax 400 default 100
+  	integer		"iteration",				#: min 10 softmax 1000 default 100
+  	integer		"seed",							#: min 0 default 0
+  	scalar		"intensity_sky",		#: softmin 0 softmax 1 default 0.1
+  	scalar		"intensity_ground",	#: softmin 0 softmax 1 default 0.1
+  	integer		"shadow_mode",			#: enum "Shadow off:Shadow on:Shadow limited" default 1
+  	integer		"half_shadow",			#: enum "Entire:Sky:Ground" default 0
+  	color			"shadow_color",			#: default 0 0 0 0
+  	scalar		"shadow_factor",		#: softmin 0 softmax 0.1 default 0.01
+  	scalar		"min_intensity",		#: softmin 0 softmax 1 default 0.8
+  	scalar		"max_intensity",		#: softmin 0 softmax 2 default 1
+  	vector		"center",						#: default 0 0 0
+  	# light properties
+  	integer		"light_type",				#: enum "Maya Directional:Maya Spot:Mentalray Directional:Mentalray Spot" default 0
+  	boolean		"visible",					#: default off
+  	scalar		"light_radius",			#: min 0 softmax 1 default 0.01
+  	# maya directional light
+  	boolean		"mayadir_useLightPosition",		#: default off
+		scalar		"mayadir_lightAngle",					#: softmin 0 softmax 360 default 0
+		boolean		"mayadir_useDepthMapShadows",	#: default off
+		boolean		"mayadir_emitDiffuse",				#: default on
+		boolean		"mayadir_emitSpecular",				#: default on
+		boolean		"mayadir_useRayTraceShadows",	#: default on
+		integer		"mayadir_shadowRays",					#: min 1 softmax 40 default 1
+		integer		"mayadir_rayDepthLimit",			#: min 0 softmax 10 default 1
+		# maya spot light
+		scalar		"mayaspot_coneAngle",					#: min 0.006 max 179.994 default 40
+		scalar		"mayaspot_penumbraAngle",			#: min -179.994 max 179.994 softmin -10 softmax 10 default 0
+		scalar		"mayaspot_dropoff",						#: min 0 softmax 255 default 0
+		boolean		"mayaspot_barnDoors",					#: default off
+		scalar		"mayaspot_leftBarnDoor",			#: min -89.997 max 89.997 default 20
+		scalar		"mayaspot_rightBarnDoor",			#: min -89.997 max 89.997 default 20
+		scalar		"mayaspot_topBarnDoor",				#: min -89.997 max 89.997 default 20
+		scalar		"mayaspot_bottomBarnDoor",		#: min -89.997 max 89.997 default 20
+		boolean		"mayaspot_useDecayRegions",		#: default off
+		scalar		"mayaspot_startDistance1",		#: min 0 default 1
+		scalar		"mayaspot_endDistance1",			#: min 0 default 2
+		scalar		"mayaspot_startDistance2",		#: min 0 default 3
+		scalar		"mayaspot_endDistance2",			#: min 0 default 6
+		scalar		"mayaspot_startDistance3",		#: min 0 default 8
+		scalar		"mayaspot_endDistance3",			#: min 0 softmax 100 default 10
+		scalar		"mayaspot_lightRadius",				#: min 0 softmax 1 default 0
+		integer		"mayaspot_decayRate",					#: enum "No Decay:Linear:Quadratic:Cubic" default 0
+		boolean		"mayaspot_useDepthMapShadows",	#: default off
+		boolean		"mayaspot_emitDiffuse",				#: default on
+		boolean		"mayaspot_emitSpecular",			#: default on
+		boolean		"mayaspot_useRayTraceShadows",	#: default on
+		integer		"mayaspot_shadowRays",				#: min 1 softmax 40 default 1
+		integer		"mayaspot_rayDepthLimit",			#: min 0 softmax 10 default 1
+		scalar		"mayaspot_fogSpread",					#: softmin 0 softmax 5 default 1
+		scalar		"mayaspot_fogIntensity",			#: softmin 0 softmax 5 default 1
+		# mental ray direction light
+		boolean		"mrdir_useLightPosition",			#: default off
+		boolean		"mrdir_useDepthMapShadows",		#: default off
+		boolean		"mrdir_useRayTraceShadows",		#: default on
+		# mental ray spot light
+		boolean		"mrspot_useDepthMapShadows",		#: default off
+		boolean		"mrspot_useRayTraceShadows",		#: default on
+    boolean   "mrspot_atten",        				#: default off
+    scalar    "mrspot_start",        				#: min 0 softmax 100 default 1
+    scalar    "mrspot_stop",         				#: min 0 softmax 1000 default 100
+    scalar		"mrspot_coneAngle",						#: min 0.006 max 179.994 default 40
+    scalar    "mrspot_penumbraAngle",       #: min -179.994 max 179.994 softmin -10 softmax 10 default 0
+    # shadowmap
+    integer		"shadowmap_resolution",				#: min 16 max 8192 default 512
+	  scalar		"shadowmap_softness",					#: min 0 softmax 1 default 0.05
+	  integer		"shadowmap_samples",					#: min 0 softmax 50 default 1					
+	  integer		"shadowmap_format",						#: enum "Regular:Detail" default 0
+	  scalar		"shadowmap_bias",							#: min 0 softmax 1 default 0
+	  scalar		"shadowmapdetail_accuracy",		#: min 0 softmax 1 default 0
+	  integer		"shadowmapdetail_type",				#: enum "Color:Alpha" default 0
+	  array	string		"shadowmap_file"
+  )
+  version 1
+  apply geometry
+  #: nodeid 8174302
+end declare
+
+
+declare shader
+  color "ccg_texture_floatAdjust" (
+        color		"input",
+        scalar  "level",		#: softmin 0 softmax 1 default 0.3
+        scalar  "multiply",	#: softmin 1 softmax 5 default 2
+        scalar	"power"			#: min 0.01 softmax 3 default 2
+    )
+    version 1
+    apply texture
+    #: nodeid 8173201
+end declare
+
+declare shader
+	struct {color "color_result", vector "vector_result", scalar "scalar_result"}
+  "ccg_simple_math" (
+  			integer			"operation_color", 		#: enum "Add:Subtract:Multiply:Divide:Power:Screen:Over" default 0
+        array color	"colors",
+        integer			"operation_vector",		#: enum "Add:Subtract:Multiply:Divide:Dot:Product:Max:Min" default 0
+        boolean			"normalize_input",		#: default false
+        boolean			"normalize_output",		#: default false
+        array vector "vectors",
+        integer			"operation_scalar",		#: enum "Add:Subtract:Multiply:Divide:Power" default 0
+        array scalar "scalars"
+    )
+    version 1
+    apply texture
+    #: nodeid 8173202
+end declare
+
+declare shader
+	struct {color "color_result", vector "vector_result", scalar "scalar_result"}
+  "ccg_state_reserve" (
+        color		"color_input",
+        vector	"vector_input",
+        scalar	"scalar_input"
+    )
+    version 1
+    apply texture
+    #: nodeid 8173203
+end declare
+
+
+declare shader
+	color "ccg_lookup_background" (
+		vector		"zoom",										#: default 1 1 0
+		vector		"pan",
+		boolean		"torus_u",								#: default on
+		boolean		"torus_v",								#: default on
+		color texture   "tex",
+		boolean		"visible_in_reflection",
+		boolean		"visible_in_refraction",
+		boolean		"visible_in_transparent",
+		boolean		"visible_in_environment",	#: default on
+		boolean		"visible_in_finalgather"
+	)
+	version 1
+	apply environment
+	#: nodeid 8173801
+end declare
+
+
+
+
+
+
+
+declare shader
+	vector "ccg_normal_map" (
+		color "color",
+		scalar "intensity",			#: min 0 softmax 1 default 1
+		integer	"normal_space",
+		#: enum "object:tangent" default 0
+		integer "texture_space"
+		#: min -11 max 63 default 0
+	)
+	version 1
+	apply texture
+	#: nodeid 8173299
+end declare
+
+declare shader
+	color "ccg_passthrough_normal_map" (
+		color "color",
+		scalar "intensity",			#: min 0 softmax 1 default 1
+		integer	"normal_space",
+		#: enum "object:tangent" default 0
+		integer "texture_space"
+		#: min -11 max 63 default 0
+	)
+	version 1
+	apply texture
+	#: nodeid 8173298
+end declare
+
+declare shader
+	struct {color "color", vector "vector", scalar "scalar"}
+	      "ccg_passthrough" (
+	      	color		"pass_color",
+	      	vector	"pass_vector",
+	      	scalar	"pass_scalar",
+	      	color		"sub_color",
+	      	vector	"sub_vector",
+	      	scalar	"sub_scalar"
+	      )
+	version 1
+	apply texture
+	#: nodeid 8173297
+end declare
+
+declare shader
+	vector "ccg_normals_list" (
+		vector "prev_normal",
+		vector "seq_normal"
+	)
+	version 1
+	apply texture
+	#: nodeid 8173296
+end declare
+
+declare shader
+	color "ccg_amb_occlusion_transp" (
+	  integer "samples",      				#: default 16
+	  color		"transparent", 					#: default 0 0 0 0
+	  color   "bright",       				#: default 1 1 1 1
+	  color   "dark",         				#: default 0 0 0 0
+	  scalar  "spread",       				#: default 0.8
+	  scalar  "max_distance", 				#: default 0
+	  boolean "reflective",   				#: default off
+	  integer "output_mode",  				#: default 0
+	  boolean "occlusion_in_alpha", 	#: default off
+  	# Version 2 parameters
+    scalar  "falloff",        			#: default 1.0
+    integer "id_inclexcl",    			#: default 0
+    integer "id_nonself",     				#: default 0
+    boolean	"use_object_label",			#: default off
+    boolean "stand_in"							#: default off
+  )
+  version 2
+  apply material
+  #: nodeid 8173199
+end declare
+
+
+
+declare shader  
+	color "ccg_texture_mix20layers" (
+		integer	"g_layers_number",	#: default 1 min 1 max 20
+		boolean	"g_inverse_alpha",	#: default 0
+		boolean	"g_enable_cc",		#: default 0
+		scalar	"g_hue",			#: default 0 min -180 max 180
+		scalar	"g_saturation",		#: default 1 min 0 softmax 3
+		scalar	"g_value",			#: default 1 min 0 softmax 3
+		scalar	"g_gamma",			#: default 1 min 0 softmax 3
+		scalar 	"g_contrast",		#: default 0 min -0.499999 max 0.499999
+		scalar	"g_brightness",		#: default 1 min 0 softmax 3
+	
+		boolean	"Enable_1",	#: default 1
+		boolean	"Enable_2",
+		boolean	"Enable_3",
+		boolean	"Enable_4",
+		boolean	"Enable_5",
+		boolean	"Enable_6",
+		boolean	"Enable_7",
+		boolean	"Enable_8",
+		boolean	"Enable_9",
+		boolean	"Enable_10",
+		boolean	"Enable_11",
+		boolean	"Enable_12",
+		boolean	"Enable_13",
+		boolean	"Enable_14",
+		boolean	"Enable_15",
+		boolean	"Enable_16",
+		boolean	"Enable_17",
+		boolean	"Enable_18",
+		boolean	"Enable_19",
+		boolean	"Enable_20",
+	
+		integer	"BlendMode_1",	#: default 0 min 0 max 18
+		integer	"BlendMode_2",	#: default 0 min 0 max 18
+		integer	"BlendMode_3",	#: default 0 min 0 max 18
+		integer	"BlendMode_4",	#: default 0 min 0 max 18
+		integer	"BlendMode_5",	#: default 0 min 0 max 18
+		integer	"BlendMode_6",	#: default 0 min 0 max 18
+		integer	"BlendMode_7",	#: default 0 min 0 max 18
+		integer	"BlendMode_8",	#: default 0 min 0 max 18
+		integer	"BlendMode_9",	#: default 0 min 0 max 18
+		integer	"BlendMode_10",	#: default 0 min 0 max 18
+		integer	"BlendMode_11",	#: default 0 min 0 max 18
+		integer	"BlendMode_12",	#: default 0 min 0 max 18
+		integer	"BlendMode_13",	#: default 0 min 0 max 18
+		integer	"BlendMode_14",	#: default 0 min 0 max 18
+		integer	"BlendMode_15",	#: default 0 min 0 max 18
+		integer	"BlendMode_16",	#: default 0 min 0 max 18
+		integer	"BlendMode_17",	#: default 0 min 0 max 18
+		integer	"BlendMode_18",	#: default 0 min 0 max 18
+		integer	"BlendMode_19",	#: default 0 min 0 max 18
+		integer	"BlendMode_20",	#: default 0 min 0 max 18
+	
+		color	"Opacity_1",
+		color	"Opacity_2",
+		color	"Opacity_3",
+		color	"Opacity_4",
+		color	"Opacity_5",
+		color	"Opacity_6",
+		color	"Opacity_7",
+		color	"Opacity_8",
+		color	"Opacity_9",
+		color	"Opacity_10",
+		color	"Opacity_11",
+		color	"Opacity_12",
+		color	"Opacity_13",
+		color	"Opacity_14",
+		color	"Opacity_15",
+		color	"Opacity_16",
+		color	"Opacity_17",
+		color	"Opacity_18",
+		color	"Opacity_19",
+		color	"Opacity_20",
+	
+		color	"Layer_1",
+		color	"Layer_2",
+		color	"Layer_3",
+		color	"Layer_4",
+		color	"Layer_5",
+		color	"Layer_6",
+		color	"Layer_7",
+		color	"Layer_8",
+		color	"Layer_9",
+		color	"Layer_10",
+		color	"Layer_11",
+		color	"Layer_12",
+		color	"Layer_13",
+		color	"Layer_14",
+		color	"Layer_15",
+		color	"Layer_16",
+		color	"Layer_17",
+		color	"Layer_18",
+		color	"Layer_19",
+		color	"Layer_20",
+		
+		integer	"AlphaMode_1",	#: default 0 min 0 max 4
+		integer	"AlphaMode_2",	#: default 0 min 0 max 4
+		integer	"AlphaMode_3",	#: default 0 min 0 max 4
+		integer	"AlphaMode_4",	#: default 0 min 0 max 4
+		integer	"AlphaMode_5",	#: default 0 min 0 max 4
+		integer	"AlphaMode_6",	#: default 0 min 0 max 4
+		integer	"AlphaMode_7",	#: default 0 min 0 max 4
+		integer	"AlphaMode_8",	#: default 0 min 0 max 4
+		integer	"AlphaMode_9",	#: default 0 min 0 max 4
+		integer	"AlphaMode_10",	#: default 0 min 0 max 4
+		integer	"AlphaMode_11",	#: default 0 min 0 max 4
+		integer	"AlphaMode_12",	#: default 0 min 0 max 4
+		integer	"AlphaMode_13",	#: default 0 min 0 max 4
+		integer	"AlphaMode_14",	#: default 0 min 0 max 4
+		integer	"AlphaMode_15",	#: default 0 min 0 max 4
+		integer	"AlphaMode_16",	#: default 0 min 0 max 4
+		integer	"AlphaMode_17",	#: default 0 min 0 max 4
+		integer	"AlphaMode_18",	#: default 0 min 0 max 4
+		integer	"AlphaMode_19",	#: default 0 min 0 max 4
+		integer	"AlphaMode_20",	#: default 0 min 0 max 4
+			
+		scalar  "mix_1",		#: default 1 min 0 max 1
+		scalar  "mix_2",		#: default 1 min 0 max 1
+		scalar  "mix_3",		#: default 1 min 0 max 1
+		scalar  "mix_4",		#: default 1 min 0 max 1
+		scalar  "mix_5",		#: default 1 min 0 max 1
+		scalar  "mix_6",		#: default 1 min 0 max 1
+		scalar  "mix_7",		#: default 1 min 0 max 1
+		scalar  "mix_8",		#: default 1 min 0 max 1
+		scalar  "mix_9",		#: default 1 min 0 max 1
+		scalar  "mix_10",		#: default 1 min 0 max 1
+		scalar  "mix_11",		#: default 1 min 0 max 1
+		scalar  "mix_12",		#: default 1 min 0 max 1
+		scalar  "mix_13",		#: default 1 min 0 max 1
+		scalar  "mix_14",		#: default 1 min 0 max 1
+		scalar  "mix_15",		#: default 1 min 0 max 1
+		scalar  "mix_16",		#: default 1 min 0 max 1
+		scalar  "mix_17",		#: default 1 min 0 max 1
+		scalar  "mix_18",		#: default 1 min 0 max 1
+		scalar  "mix_19",		#: default 1 min 0 max 1
+		scalar  "mix_20",		#: default 1 min 0 max 1
+
+		boolean "alphaInvert_1",
+		boolean "alphaInvert_2",
+		boolean "alphaInvert_3",
+		boolean "alphaInvert_4",
+		boolean "alphaInvert_5",
+		boolean "alphaInvert_6",
+		boolean "alphaInvert_7",
+		boolean "alphaInvert_8",
+		boolean "alphaInvert_9",
+		boolean "alphaInvert_10",
+		boolean "alphaInvert_11",
+		boolean "alphaInvert_12",
+		boolean "alphaInvert_13",
+		boolean "alphaInvert_14",
+		boolean "alphaInvert_15",
+		boolean "alphaInvert_16",
+		boolean "alphaInvert_17",
+		boolean "alphaInvert_18",
+		boolean "alphaInvert_19",
+		boolean "alphaInvert_20",
+
+		boolean "colorInvert_1",
+		boolean "colorInvert_2",
+		boolean "colorInvert_3",
+		boolean "colorInvert_4",
+		boolean "colorInvert_5",
+		boolean "colorInvert_6",
+		boolean "colorInvert_7",
+		boolean "colorInvert_8",
+		boolean "colorInvert_9",
+		boolean "colorInvert_10",
+		boolean "colorInvert_11",
+		boolean "colorInvert_12",
+		boolean "colorInvert_13",
+		boolean "colorInvert_14",
+		boolean "colorInvert_15",
+		boolean "colorInvert_16",
+		boolean "colorInvert_17",
+		boolean "colorInvert_18",
+		boolean "colorInvert_19",
+		boolean "colorInvert_20",
+		
+		boolean "useOpacity_1",
+		boolean "useOpacity_2",
+		boolean "useOpacity_3",
+		boolean "useOpacity_4",
+		boolean "useOpacity_5",
+		boolean "useOpacity_6",
+		boolean "useOpacity_7",
+		boolean "useOpacity_8",
+		boolean "useOpacity_9",
+		boolean "useOpacity_10",
+		boolean "useOpacity_11",
+		boolean "useOpacity_12",
+		boolean "useOpacity_13",
+		boolean "useOpacity_14",
+		boolean "useOpacity_15",
+		boolean "useOpacity_16",
+		boolean "useOpacity_17",
+		boolean "useOpacity_18",
+		boolean "useOpacity_19",
+		boolean "useOpacity_20",
+
+		boolean "enable_cc_1",
+		boolean "enable_cc_2",
+		boolean "enable_cc_3",
+		boolean "enable_cc_4",
+		boolean "enable_cc_5",
+		boolean "enable_cc_6",
+		boolean "enable_cc_7",
+		boolean "enable_cc_8",
+		boolean "enable_cc_9",
+		boolean "enable_cc_10",
+		boolean "enable_cc_11",
+		boolean "enable_cc_12",
+		boolean "enable_cc_13",
+		boolean "enable_cc_14",
+		boolean "enable_cc_15",
+		boolean "enable_cc_16",
+		boolean "enable_cc_17",
+		boolean "enable_cc_18",
+		boolean "enable_cc_19",
+		boolean "enable_cc_20",
+		
+		scalar "hue_1",		#: default 0 min -180 max 180
+		scalar "hue_2",		#: default 0 min -180 max 180
+		scalar "hue_3",		#: default 0 min -180 max 180
+		scalar "hue_4",		#: default 0 min -180 max 180
+		scalar "hue_5",		#: default 0 min -180 max 180
+		scalar "hue_6",		#: default 0 min -180 max 180
+		scalar "hue_7",		#: default 0 min -180 max 180
+		scalar "hue_8",		#: default 0 min -180 max 180
+		scalar "hue_9",		#: default 0 min -180 max 180
+		scalar "hue_10",		#: default 0 min -180 max 180
+		scalar "hue_11",		#: default 0 min -180 max 180
+		scalar "hue_12",		#: default 0 min -180 max 180
+		scalar "hue_13",		#: default 0 min -180 max 180
+		scalar "hue_14",		#: default 0 min -180 max 180
+		scalar "hue_15",		#: default 0 min -180 max 180
+		scalar "hue_16",		#: default 0 min -180 max 180
+		scalar "hue_17",		#: default 0 min -180 max 180
+		scalar "hue_18",		#: default 0 min -180 max 180
+		scalar "hue_19",		#: default 0 min -180 max 180
+		scalar "hue_20",		#: default 0 min -180 max 180
+			
+		scalar "saturation_1",		#: default 1 min 0 softmax 3
+		scalar "saturation_2",		#: default 1 min 0 softmax 3
+		scalar "saturation_3",		#: default 1 min 0 softmax 3
+		scalar "saturation_4",		#: default 1 min 0 softmax 3
+		scalar "saturation_5",		#: default 1 min 0 softmax 3
+		scalar "saturation_6",		#: default 1 min 0 softmax 3
+		scalar "saturation_7",		#: default 1 min 0 softmax 3
+		scalar "saturation_8",		#: default 1 min 0 softmax 3
+		scalar "saturation_9",		#: default 1 min 0 softmax 3
+		scalar "saturation_10",		#: default 1 min 0 softmax 3
+		scalar "saturation_11",		#: default 1 min 0 softmax 3
+		scalar "saturation_12",		#: default 1 min 0 softmax 3
+		scalar "saturation_13",		#: default 1 min 0 softmax 3
+		scalar "saturation_14",		#: default 1 min 0 softmax 3
+		scalar "saturation_15",		#: default 1 min 0 softmax 3
+		scalar "saturation_16",		#: default 1 min 0 softmax 3
+		scalar "saturation_17",		#: default 1 min 0 softmax 3
+		scalar "saturation_18",		#: default 1 min 0 softmax 3
+		scalar "saturation_19",		#: default 1 min 0 softmax 3
+		scalar "saturation_20",		#: default 1 min 0 softmax 3
+			
+		scalar "value_1",		#: default 1 min 0 softmax 3
+		scalar "value_2",		#: default 1 min 0 softmax 3
+		scalar "value_3",		#: default 1 min 0 softmax 3
+		scalar "value_4",		#: default 1 min 0 softmax 3
+		scalar "value_5",		#: default 1 min 0 softmax 3
+		scalar "value_6",		#: default 1 min 0 softmax 3
+		scalar "value_7",		#: default 1 min 0 softmax 3
+		scalar "value_8",		#: default 1 min 0 softmax 3
+		scalar "value_9",		#: default 1 min 0 softmax 3
+		scalar "value_10",		#: default 1 min 0 softmax 3
+		scalar "value_11",		#: default 1 min 0 softmax 3
+		scalar "value_12",		#: default 1 min 0 softmax 3
+		scalar "value_13",		#: default 1 min 0 softmax 3
+		scalar "value_14",		#: default 1 min 0 softmax 3
+		scalar "value_15",		#: default 1 min 0 softmax 3
+		scalar "value_16",		#: default 1 min 0 softmax 3
+		scalar "value_17",		#: default 1 min 0 softmax 3
+		scalar "value_18",		#: default 1 min 0 softmax 3
+		scalar "value_19",		#: default 1 min 0 softmax 3
+		scalar "value_20",		#: default 1 min 0 softmax 3
+			
+		scalar "gamma_1",		#: default 1 min 0 softmax 3
+		scalar "gamma_2",		#: default 1 min 0 softmax 3
+		scalar "gamma_3",		#: default 1 min 0 softmax 3
+		scalar "gamma_4",		#: default 1 min 0 softmax 3
+		scalar "gamma_5",		#: default 1 min 0 softmax 3
+		scalar "gamma_6",		#: default 1 min 0 softmax 3
+		scalar "gamma_7",		#: default 1 min 0 softmax 3
+		scalar "gamma_8",		#: default 1 min 0 softmax 3
+		scalar "gamma_9",		#: default 1 min 0 softmax 3
+		scalar "gamma_10",		#: default 1 min 0 softmax 3
+		scalar "gamma_11",		#: default 1 min 0 softmax 3
+		scalar "gamma_12",		#: default 1 min 0 softmax 3
+		scalar "gamma_13",		#: default 1 min 0 softmax 3
+		scalar "gamma_14",		#: default 1 min 0 softmax 3
+		scalar "gamma_15",		#: default 1 min 0 softmax 3
+		scalar "gamma_16",		#: default 1 min 0 softmax 3
+		scalar "gamma_17",		#: default 1 min 0 softmax 3
+		scalar "gamma_18",		#: default 1 min 0 softmax 3
+		scalar "gamma_19",		#: default 1 min 0 softmax 3
+		scalar "gamma_20",		#: default 1 min 0 softmax 3
+	
+		boolean	"ColorClip",	#: default 0
+	
+		color	"hardwareColor"	#: default 0.5 0.5 0.5
+	) 
+	#: nodeid 8173204
+	version 1
+	apply texture
+end declare
+
+declare shader  
+	color "ccg_base_mix20layers" (
+		integer	"g_layers_number",	#: default 1 min 1 max 20
+		boolean	"g_inverse_alpha",	#: default 0
+	
+		boolean	"Enable_1",	#: default 1
+		boolean	"Enable_2",
+		boolean	"Enable_3",
+		boolean	"Enable_4",
+		boolean	"Enable_5",
+		boolean	"Enable_6",
+		boolean	"Enable_7",
+		boolean	"Enable_8",
+		boolean	"Enable_9",
+		boolean	"Enable_10",
+		boolean	"Enable_11",
+		boolean	"Enable_12",
+		boolean	"Enable_13",
+		boolean	"Enable_14",
+		boolean	"Enable_15",
+		boolean	"Enable_16",
+		boolean	"Enable_17",
+		boolean	"Enable_18",
+		boolean	"Enable_19",
+		boolean	"Enable_20",
+	
+		integer	"BlendMode_1",	#: default 0 min 0 max 18
+		integer	"BlendMode_2",	#: default 0 min 0 max 18
+		integer	"BlendMode_3",	#: default 0 min 0 max 18
+		integer	"BlendMode_4",	#: default 0 min 0 max 18
+		integer	"BlendMode_5",	#: default 0 min 0 max 18
+		integer	"BlendMode_6",	#: default 0 min 0 max 18
+		integer	"BlendMode_7",	#: default 0 min 0 max 18
+		integer	"BlendMode_8",	#: default 0 min 0 max 18
+		integer	"BlendMode_9",	#: default 0 min 0 max 18
+		integer	"BlendMode_10",	#: default 0 min 0 max 18
+		integer	"BlendMode_11",	#: default 0 min 0 max 18
+		integer	"BlendMode_12",	#: default 0 min 0 max 18
+		integer	"BlendMode_13",	#: default 0 min 0 max 18
+		integer	"BlendMode_14",	#: default 0 min 0 max 18
+		integer	"BlendMode_15",	#: default 0 min 0 max 18
+		integer	"BlendMode_16",	#: default 0 min 0 max 18
+		integer	"BlendMode_17",	#: default 0 min 0 max 18
+		integer	"BlendMode_18",	#: default 0 min 0 max 18
+		integer	"BlendMode_19",	#: default 0 min 0 max 18
+		integer	"BlendMode_20",	#: default 0 min 0 max 18
+	
+		color	"Opacity_1",
+		color	"Opacity_2",
+		color	"Opacity_3",
+		color	"Opacity_4",
+		color	"Opacity_5",
+		color	"Opacity_6",
+		color	"Opacity_7",
+		color	"Opacity_8",
+		color	"Opacity_9",
+		color	"Opacity_10",
+		color	"Opacity_11",
+		color	"Opacity_12",
+		color	"Opacity_13",
+		color	"Opacity_14",
+		color	"Opacity_15",
+		color	"Opacity_16",
+		color	"Opacity_17",
+		color	"Opacity_18",
+		color	"Opacity_19",
+		color	"Opacity_20",
+	
+		shader	"shader_1",
+		shader	"shader_2",
+		shader	"shader_3",
+		shader	"shader_4",
+		shader	"shader_5",
+		shader	"shader_6",
+		shader	"shader_7",
+		shader	"shader_8",
+		shader	"shader_9",
+		shader	"shader_10",
+		shader	"shader_11",
+		shader	"shader_12",
+		shader	"shader_13",
+		shader	"shader_14",
+		shader	"shader_15",
+		shader	"shader_16",
+		shader	"shader_17",
+		shader	"shader_18",
+		shader	"shader_19",
+		shader	"shader_20",
+		
+		integer	"AlphaMode_1",	#: default 0 min 0 max 4
+		integer	"AlphaMode_2",	#: default 0 min 0 max 4
+		integer	"AlphaMode_3",	#: default 0 min 0 max 4
+		integer	"AlphaMode_4",	#: default 0 min 0 max 4
+		integer	"AlphaMode_5",	#: default 0 min 0 max 4
+		integer	"AlphaMode_6",	#: default 0 min 0 max 4
+		integer	"AlphaMode_7",	#: default 0 min 0 max 4
+		integer	"AlphaMode_8",	#: default 0 min 0 max 4
+		integer	"AlphaMode_9",	#: default 0 min 0 max 4
+		integer	"AlphaMode_10",	#: default 0 min 0 max 4
+		integer	"AlphaMode_11",	#: default 0 min 0 max 4
+		integer	"AlphaMode_12",	#: default 0 min 0 max 4
+		integer	"AlphaMode_13",	#: default 0 min 0 max 4
+		integer	"AlphaMode_14",	#: default 0 min 0 max 4
+		integer	"AlphaMode_15",	#: default 0 min 0 max 4
+		integer	"AlphaMode_16",	#: default 0 min 0 max 4
+		integer	"AlphaMode_17",	#: default 0 min 0 max 4
+		integer	"AlphaMode_18",	#: default 0 min 0 max 4
+		integer	"AlphaMode_19",	#: default 0 min 0 max 4
+		integer	"AlphaMode_20",	#: default 0 min 0 max 4
+			
+		scalar  "mix_1",		#: default 1 min 0 max 1
+		scalar  "mix_2",		#: default 1 min 0 max 1
+		scalar  "mix_3",		#: default 1 min 0 max 1
+		scalar  "mix_4",		#: default 1 min 0 max 1
+		scalar  "mix_5",		#: default 1 min 0 max 1
+		scalar  "mix_6",		#: default 1 min 0 max 1
+		scalar  "mix_7",		#: default 1 min 0 max 1
+		scalar  "mix_8",		#: default 1 min 0 max 1
+		scalar  "mix_9",		#: default 1 min 0 max 1
+		scalar  "mix_10",		#: default 1 min 0 max 1
+		scalar  "mix_11",		#: default 1 min 0 max 1
+		scalar  "mix_12",		#: default 1 min 0 max 1
+		scalar  "mix_13",		#: default 1 min 0 max 1
+		scalar  "mix_14",		#: default 1 min 0 max 1
+		scalar  "mix_15",		#: default 1 min 0 max 1
+		scalar  "mix_16",		#: default 1 min 0 max 1
+		scalar  "mix_17",		#: default 1 min 0 max 1
+		scalar  "mix_18",		#: default 1 min 0 max 1
+		scalar  "mix_19",		#: default 1 min 0 max 1
+		scalar  "mix_20",		#: default 1 min 0 max 1
+
+		boolean "alphaInvert_1",
+		boolean "alphaInvert_2",
+		boolean "alphaInvert_3",
+		boolean "alphaInvert_4",
+		boolean "alphaInvert_5",
+		boolean "alphaInvert_6",
+		boolean "alphaInvert_7",
+		boolean "alphaInvert_8",
+		boolean "alphaInvert_9",
+		boolean "alphaInvert_10",
+		boolean "alphaInvert_11",
+		boolean "alphaInvert_12",
+		boolean "alphaInvert_13",
+		boolean "alphaInvert_14",
+		boolean "alphaInvert_15",
+		boolean "alphaInvert_16",
+		boolean "alphaInvert_17",
+		boolean "alphaInvert_18",
+		boolean "alphaInvert_19",
+		boolean "alphaInvert_20",
+		
+		boolean "useOpacity_1",		#: default on
+		boolean "useOpacity_2",		#: default on
+		boolean "useOpacity_3",		#: default on
+		boolean "useOpacity_4",		#: default on
+		boolean "useOpacity_5",		#: default on
+		boolean "useOpacity_6",		#: default on
+		boolean "useOpacity_7",		#: default on
+		boolean "useOpacity_8",		#: default on
+		boolean "useOpacity_9",		#: default on
+		boolean "useOpacity_10",		#: default on
+		boolean "useOpacity_11",		#: default on
+		boolean "useOpacity_12",		#: default on
+		boolean "useOpacity_13",		#: default on
+		boolean "useOpacity_14",		#: default on
+		boolean "useOpacity_15",		#: default on
+		boolean "useOpacity_16",		#: default on
+		boolean "useOpacity_17",		#: default on
+		boolean "useOpacity_18",		#: default on
+		boolean "useOpacity_19",		#: default on
+		boolean "useOpacity_20",		#: default on
+	
+		boolean	"ColorClip",	#: default 0
+		
+		boolean   "passesInOnce",			#: default false
+		string    "fbWriteString",
+		boolean		"disableShadowChain",
+	
+		color	"hardwareColor"	#: default 0.5 0.5 0.5
+	) 
+	#: nodeid 8173109
+	version 1
+	apply material
+end declare
+
+
+declare shader
+	vector "ccg_bump_map" (
+		vector		"u",
+		vector		"v",
+		vector		"coord",
+		vector		"step",				#: default 0.01 min 0.001
+		scalar		"factor",			#: default 0.01
+		boolean		"torus_u",		#: default on
+		boolean		"torus_v",		#: default on
+		boolean		"alpha",			#: default off
+		color texture	"tex",
+		boolean		"clamp",			#: default on
+		boolean		"inverse"			#: default off
+	)
+	#: nodeid 8173205
+	version 2
+	apply texture
+end declare
+
+declare shader
+    color "ccg_bump_map2" (
+        scalar          "factor",
+        scalar          "scale",
+        color texture   "tex",
+        color           "color",
+        boolean		"inverse"
+	)
+	#: nodeid 8173206
+	version 1
+	apply texture
+end declare
+
+declare shader
+	color "ccg_passthrough_bump_map" (
+		vector		"u",
+		vector		"v",
+		vector		"coord",
+		vector		"step",					#: default 0.01 min 0.001
+		scalar		"factor",				#: default 0.01
+		boolean		"torus_u",			#: default on
+		boolean		"torus_v",			#: default on
+		boolean		"alpha",				#: default off
+		color texture	"tex",
+		boolean		"clamp",				#: default on
+		boolean		"inverse"				#: default off
+	)
+	#: nodeid 8173207
+	version 2
+	apply texture
+end declare
+
+declare shader
+	vector "ccg_bump_procedural" (
+		vector		"u",
+		vector		"v",
+		vector		"step",				#: default 0.01 min 0.001
+		scalar		"factor",			#: default 0.01
+		boolean		"torus_u",		#: default on
+		boolean		"torus_v",		#: default on
+		boolean		"alpha",			#: default off
+		color 		"color",
+		boolean		"clamp",			#: default on
+		boolean		"inverse"			#: default off
+	)
+	#: nodeid 8173208
+	version 1
+	apply texture
+end declare
+
+declare shader
+  color "ccg_maya_blinn" (
+    color   "color",        #: default 0.5 0.5 0.5
+    color   "transparency",
+    color   "ambient",
+    color   "incandescence",
+    vector    "normalMapping",
+    scalar    "diffuse",        #: softmin 0 softmax 1 default 0.8
+    scalar    "eccentricity",     #: min 0 max 0.999 default 0.3
+    scalar    "specularRolloff",    #: softmin 0 softmax 1 default 0.7
+    color   "specular",       #: default 0.5 0.5 0.5
+    color   "reflectivity",     #: default 0.5 0.5 0.5
+    color   "reflectedColor",
+    integer "insideReflectLimit", #: softmin 0 softmax 10 default 2
+    boolean   "disableRayRefl",
+    integer "fresnel_mode",
+    #: enum "None:Mental Ray Fresnel:Standard Fresnel" default 0
+    scalar	"fresnel_min",			#: softmin 0 softmax 1 default 0
+    scalar	"fresnel_max",			#: softmin 0 softmax 1 default 1
+    scalar	"n_incidence",			#: softmin 1 softmax 2.5  default 1.0
+    scalar	"n_transmission",		#: softmin 1.2 softmax 2.5  default 2.2
+    boolean	"fresnel_diffuse",	#: default on
+    boolean "fresnel_specular",	#: default on
+    scalar	"refractiveIndex",	#: default 1.0
+    color		"refractedColor",		#: default 1 1 1
+    integer	"ibl_enable",				#: enum "Disabled:Environment:Light Array:Diffuse" default 0
+    color		"bent",
+    integer	"bent_space",				#: enum "World:Camera:Object:No Change" default 0
+    integer	"ibl_shadow_mode",	#: enum "Occlusion:Object Block:No Shadow" default 0
+    scalar	"min_dist",					#: default 0
+    scalar	"max_dist",					#: default 1
+    color		"ibl_bright",				#: default 1 1 1
+    color		"ibl_dark",					#: default 0 0 0
+    boolean	"ibl_emit_diffuse",	#: default on
+    boolean	"ibl_emit_specular",#: default on
+    scalar	"ibl_angle",				#: min 0 max 180 default 180
+    color		"ambientOcclusion",	#: default 1 1 1
+    color		"reflectOcclusion",	#: default 1 1 1
+    boolean	"add_to_combined",	#: default false
+    # layers parameters
+    scalar    "depthLimitMin",      #: min 0 default 0
+    scalar    "depthLimitMax",      #: min 0.001 default 20
+    integer   "layer",
+    #: enum "None:Combined:Color:Diffuse:Ambient:Specular:Incandescence:Reflection:Refraction:Z:Normal:Occlusion:Shadow:Velocity:UV:ObjectID:MaterialID:Reflection Occlusion:Refraction Occlusion:Global Illumination:Translucent:SSS Front:SSS Middle:SSS Back" default 1
+    boolean		"enableTransPasses",
+    boolean   "passesInOnce",		#: default false
+    boolean		"diffuseOpacity",
+    string    "fbWriteString",
+    boolean		"disableShadowChain",
+    integer   "mode",
+    array light "lights"
+  )
+  version 1
+  apply material
+  #: nodeid 8173110
+end declare
+
+declare shader
+  color "ccg_maya_phong" (
+    color   "color",        #: default 0.5 0.5 0.5
+    color   "transparency",
+    color   "ambient",
+    color   "incandescence",
+    vector    "normalMapping",
+    scalar    "diffuse",        #: softmin 0 softmax 1 default 0.8
+    scalar    "cosinePower",      #: min 2 softmax 100 default 20
+    color   "specular",       #: default 0.5 0.5 0.5
+    color   "reflectivity",     #: default 0.5 0.5 0.5
+    color   "reflectedColor",
+    integer "insideReflectLimit", #: softmin 0 softmax 10 default 2
+    boolean   "disableRayRefl",
+    integer "fresnel_mode",
+    #: enum "None:Mental Ray Fresnel:Standard Fresnel" default 0
+    scalar	"fresnel_min",			#: softmin 0 softmax 1 default 0
+    scalar	"fresnel_max",			#: softmin 0 softmax 1 default 1
+    scalar	"n_incidence",			#: softmin 1 softmax 2.5  default 1.0
+    scalar	"n_transmission",		#: softmin 1.2 softmax 2.5  default 2.2
+    boolean	"fresnel_diffuse",	#: default on
+    boolean "fresnel_specular",	#: default on
+    scalar	"refractiveIndex",	#: default 1.0
+    color		"refractedColor",		#: default 1 1 1
+    integer	"ibl_enable",				#: enum "Disabled:Environment:Light Array:Diffuse" default 0
+    color		"bent",
+    integer	"bent_space",				#: enum "World:Camera:Object:No Change" default 0
+    integer	"ibl_shadow_mode",	#: enum "Occlusion:Object Block:No Shadow" default 0
+    scalar	"min_dist",					#: default 0
+    scalar	"max_dist",					#: default 1
+    color		"ibl_bright",				#: default 1 1 1
+    color		"ibl_dark",					#: default 0 0 0
+    boolean	"ibl_emit_diffuse",	#: default on
+    boolean	"ibl_emit_specular",#: default on
+    scalar	"ibl_angle",				#: min 0 max 180 default 180
+    color		"ambientOcclusion",	#: default 1 1 1
+    color		"reflectOcclusion",	#: default 1 1 1
+    boolean	"add_to_combined",	#: default false
+    scalar    "depthLimitMin",      #: min 0 default 0
+    scalar    "depthLimitMax",      #: min 0.001 default 20
+    integer   "layer",
+    #: enum "None:Combined:Color:Diffuse:Ambient:Specular:Incandescence:Reflection:Refraction:Z:Normal:Occlusion:Shadow:Velocity:UV:ObjectID:MaterialID:Reflection Occlusion:Refraction Occlusion:Global Illumination:Translucent:SSS Front:SSS Middle:SSS Back" default 1
+    boolean		"enableTransPasses",
+    boolean   "passesInOnce",		#: default false
+    boolean		"diffuseOpacity",
+    string    "fbWriteString",
+    boolean		"disableShadowChain",
+    integer   "mode",
+    array light "lights"
+  )
+  version 1
+  apply material
+  #: nodeid 8173111
+end declare
+
+
+declare shader
+  color "ccg_base_twosided" (
+    shader		"front_shader",
+    shader		"back_shader",
+    boolean		"disableShadowChain"
+  )
+  version 1
+  apply material
+  #: nodeid 8173112
+end declare
+

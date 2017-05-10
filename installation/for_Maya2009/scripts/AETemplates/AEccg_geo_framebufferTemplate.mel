@@ -1,0 +1,114 @@
+
+global proc string AEccg_geo_framebuffer_name_conversion(string $name)
+{
+  switch ($name)
+  {
+    case "combined":			return "Combined"; break;
+    case "col":						return "Color"; break;
+    case "diff":					return "Diffuse"; break;
+    case "ambi":					return "Ambient"; break;
+    case "spec":					return "Specular"; break;
+    case "incan":					return "Incandescence"; break;
+    case "refl":					return "Reflection"; break;
+    case "refr":					return "Refraction"; break;
+    case "z":							return "Depth"; break;
+    case "nor":						return "Normal"; break;
+    case "ao":						return "Occlusion"; break;
+    case "shad":					return "Shadow"; break;
+    case "vec":						return "Motion Vector"; break;
+    case "uv":						return "Texture UV"; break;
+    case "oid":						return "Object ID"; break;
+    case "mid":						return "Material ID"; break;
+    case "reflao":				return "Reflect Occlusion"; break;
+    case "refrao":				return "Refract Occlusion"; break;
+    case "globillum":			return "Global Illumination"; break;
+    case "translucent":		return "Translucent"; break;
+    case "sssfront":			return "SSS Front"; break;
+    case "sssmiddle":			return "SSS Middle"; break;
+    case "sssback":				return "SSS Back"; break;
+    default:							return "Unknown Pass";
+  }
+}
+
+global proc AEccg_geo_framebuffer_editor( string $attr1){
+  string $node = plugNode($attr1);
+  string $fbstring = `getAttr ($node+".fbWriteString")`;
+  string $buffer[], $tmp[], $passes[];
+  tokenize $fbstring ";" $passes;
+  int $buffer_size = size($passes);
+  int $i,$j;
+  for($i=0,$j=0;$i<$buffer_size;$i++){
+  	if($passes[$i]!=""){
+  		tokenize $passes[$i] "=" $tmp;
+  		$buffer[$j] = strip($tmp[0]);
+  		$j++;
+  	}
+  }
+  clear $tmp;
+  $tmp = $buffer;
+  clear $buffer;
+  for($i=0,$j=0;$i<$buffer_size;$i++){
+  	$tmp[$i] = AEccg_geo_framebuffer_name_conversion(strip($tmp[$i]));
+  	if($tmp[$i]!="Unknown Pass"){
+  		$buffer[$j] = $tmp[$i];
+  		$j++;
+  	}
+  }
+  $buffer_size = size($buffer);
+  
+	if($buffer_size!=0){
+	 	if(`windowPref -exists ccgGeoFramebufferEditor`) windowPref -e -w 300 -h 400 ccgGeoFramebufferEditor;
+		if(`window -exists ccgGeoFramebufferEditor`) deleteUI ccgGeoFramebufferEditor;
+		window -t "Per Framebuffers Editor" -w 300 -h 400 -rtf true -s true ccgGeoFramebufferEditor;
+		scrollLayout -cr true;
+		columnLayout -adj 1;
+	  	for($i=1;$i<=$buffer_size;$i++){
+	  		attrControlGrp -l $buffer[$i-1] -attribute ($node+".type_fb_"+$i);
+	  		attrControlGrp -l "Filter" -attribute ($node+".filter_"+$i);
+			separator;
+	  	}
+	  showWindow ccgGeoFramebufferEditor;
+	 }else warning("Set fbWriteString attribute by ccgRenderLayer firstly!");
+}
+
+global proc AEccg_geo_framebuffer_editorReplace( string $attr1 ){
+	button -e -c ("AEccg_geo_framebuffer_editor "+$attr1) ccgGeoFramebufferEditorButton;
+}
+
+global proc AEccg_geo_framebuffer_editorNew( string $attr1 ){
+  button -l "Open Editor" ccgGeoFramebufferEditorButton;
+  AEccg_geo_framebuffer_editorReplace($attr1);
+}
+
+global proc AEccg_geo_framebufferTemplate( string $nodeName )
+{
+  editorTemplate -beginScrollLayout;
+  
+  editorTemplate -beginLayout "Geometry Framebuffer Shader Attributes" -collapse false;
+	editorTemplate -s "enable";
+    editorTemplate -l "File Name" -ac "filename";
+    editorTemplate -l "File Type" -ac "format";
+    editorTemplate -l "Enable OpenExr Mult-channels" -io -ac "Enable_Multi_channel_OpenExr";
+	editorTemplate -l "Enable Sub Folder" -io -ac "enableSubFolder";
+    editorTemplate -l "Image Compression" -ac "compression";
+    editorTemplate -l "Frame Number Padding" -ac "padding";
+    editorTemplate -l "Passes String" -ac "fbWriteString";
+
+		editorTemplate -beginLayout "Per Framebuffer Attributes" -collapse true;
+	    editorTemplate -callCustom "AEccg_geo_framebuffer_editorNew"
+	    							"AEccg_geo_framebuffer_editorReplace" "type_fb_1";
+		editorTemplate -beginLayout "Type Array" -collapse true;
+			int $i;
+			for($i=1;$i<=25;$i++) editorTemplate -l ("Type "+$i) -ac ("type_fb_"+$i);
+		editorTemplate -endLayout;
+		editorTemplate -beginLayout "Filter Array" -collapse true;
+			for($i=1;$i<=25;$i++) editorTemplate -l ("Filter "+$i) -io -ac ("filter_"+$i);
+		editorTemplate -endLayout;
+	  
+  editorTemplate -endLayout;
+
+  AEdependNodeTemplate $nodeName;
+  editorTemplate -addExtraControls;
+
+  editorTemplate -endScrollLayout;
+}

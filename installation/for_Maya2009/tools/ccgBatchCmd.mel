@@ -1,0 +1,72 @@
+global proc string[] ccgBatchCmd_nodeType()
+{
+  return {"ccg_base_blinn",
+          "ccg_base_phong",
+          "ccg_base_lambert"};
+}
+
+global proc ccgBatchCmd_setLayer(string $node, string $layers)
+{ 
+  switch($layers)
+  {
+    case "LAYER_combined":  setAttr ($node+".layer") 1;break;
+    case "LAYER_col":       setAttr ($node+".layer") 2;break;
+    case "LAYER_diff":      setAttr ($node+".layer") 3;break;
+    case "LAYER_ambi":      setAttr ($node+".layer") 4;break;
+    case "LAYER_spec":      setAttr ($node+".layer") 5;break;
+    case "LAYER_incan":     setAttr ($node+".layer") 6;break;
+    case "LAYER_refl":      setAttr ($node+".layer") 7;break;
+    case "LAYER_refr":      setAttr ($node+".layer") 8;break;
+    case "LAYER_z":         setAttr ($node+".layer") 9;break;
+    case "LAYER_nor":       setAttr ($node+".layer") 10;break;
+    case "LAYER_ao":        setAttr ($node+".layer") 11;break;
+    case "LAYER_shad":      setAttr ($node+".layer") 12;break;
+    case "LAYER_vec":       setAttr ($node+".layer") 13;break;
+    case "LAYER_uv":        setAttr ($node+".layer") 14;break;
+    case "LAYER_oid":       setAttr ($node+".layer") 15;break;
+    case "LAYER_mid":       setAttr ($node+".layer") 16;break;
+    case "LAYER_reflao":    setAttr ($node+".layer") 17;break;
+    case "LAYER_refrao":    setAttr ($node+".layer") 18;break;
+    case "LAYER_globillum": setAttr ($node+".layer") 19;break;
+    default: setAttr ($node+".layer") 1;
+  }
+}
+
+global proc string ccgBatchCmd_nameConvert(string $name)
+{
+  switch ($name)
+  {
+    case "Combined":          return "LAYER_combined";
+    case "Color":             return "LAYER_col";
+    case "Diffuse":           return "LAYER_diff";
+    case "Ambient":           return "LAYER_ambi";
+    case "Specular":          return "LAYER_spec";
+    case "Incandescence":     return "LAYER_incan";
+    case "Reflection":        return "LAYER_refl";
+    case "Z":                 return "LAYER_z";
+    case "Normal":            return "LAYER_nor";
+    default:                  return "LAYER_combined";
+  }
+}
+
+
+global proc ccgBatchCmd(string $layer)
+{
+  string $cvtName,$nodeTypes[],$shaders[];
+  int $i,$j,$typeNum,$shaderNum;
+  
+  $cvtName = ccgBatchCmd_nameConvert($layer);
+  $nodeTypes = ccgBatchCmd_nodeType();
+  $typeNum = size($nodeTypes);
+  
+  for($i=0;$i<$typeNum;$i++)
+  {
+    $shaders = `ls -fl -type $nodeTypes[$i]`;
+    $shaderNum = size($shaders);
+    for($j=0;$j<$shaderNum;$j++)
+    {
+      if(`attributeExists "layer" $shaders[$j]`&&!`getAttr -l ($shaders[$j]+".layer")`)
+        ccgBatchCmd_setLayer($shaders[$j],$cvtName);
+    }
+  }
+}

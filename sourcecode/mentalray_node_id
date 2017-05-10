@@ -1,0 +1,51 @@
+nodes id starts from 8173101 
+the 817 have no meaning, just a random pick
+then follows two digit number (e.g. 31) for category,
+then follows two digit number (e.g. 01) for index of shaders in that category.
+
+31: material shader
+	01 ccg_base_lambert
+	02 ccg_base_blinn
+	03 ccg_base_phong
+	04 ccg_base_surface
+	05 ccg_base_ward
+	06 ccg_base_useBackground
+	07 ccg_base_template
+	08 ccg_base_template_x
+	09 ccg_base_mix20layers
+	10 ccg_maya_blinn
+	11 ccg_maya_phong
+	12 ccg_base_twosided
+	99 ccg_amb_occlusion_transp
+32: texture shader
+	01 ccg_texture_floatAdjust
+	02 ccg_simple_math
+	03 ccg_state_reserve
+	04 ccg_texture_mix20layers
+	05 ccg_bump_map
+	06 ccg_bump_map2
+	07 ccg_passthrough_bump_map
+	08 ccg_bump_procedural
+	96 ccg_normals_list
+	97 ccg_passthrough
+	98 ccg_passthrough_normal_map
+	99 ccg_normal_map
+33: shadow shader
+34: light shader
+35: output shader
+	01 ccg_output_exr
+	02 ccg_output_bezier_clamp
+36: lens shader
+37: volume shader
+38: environment shader
+	01 ccg_lookup_background
+39: photon shader
+40: photon volume shader
+41: photon emitter shader
+42: displacement shader
+43: geometry shader
+	01 ccg_geo_frambuffer
+	02 ccg_geo_ibl
+44: contour shader
+45: lightmap shader
+46: state shader

@@ -1,0 +1,1888 @@
+global proc string[] ccgRenderLayer_nodeType()
+{
+  return {"ccg_base_blinn",
+          "ccg_base_phong",
+          "ccg_base_lambert",
+          "ccg_base_surface",
+          "ccg_base_ward",
+          "ccg_base_template",
+          "ccg_base_template_x",
+          "ccg_base_mix20layers",
+          "ccg_base_useBackground",
+          "ccg_base_twosided",
+          "ccg_maya_blinn",
+          "ccg_maya_phong",
+          "ccg_output_exr",
+          "ccg_geo_framebuffer"};
+}
+
+global proc int ccgRenderLayer_isCcgShaders(string $material, string $nodetype[])
+{
+  int $num = size($nodetype);
+  int $i;
+  for($i=0;$i<$num;$i++){
+    if(`nodeType $material`==$nodetype[$i]){
+      return 1;
+      break;
+    }
+  }
+  
+  return 0;
+}
+
+global proc ccgRenderLayer_setLayer(string $node, string $layers)
+{
+  switch($layers)
+  {
+    case "LAYER_combined":  setAttr ($node+".layer") 1;break;
+    case "LAYER_col":       setAttr ($node+".layer") 2;break;
+    case "LAYER_diff":      setAttr ($node+".layer") 3;break;
+    case "LAYER_ambi":      setAttr ($node+".layer") 4;break;
+    case "LAYER_spec":      setAttr ($node+".layer") 5;break;
+    case "LAYER_incan":     setAttr ($node+".layer") 6;break;
+    case "LAYER_refl":      setAttr ($node+".layer") 7;break;
+    case "LAYER_refr":      setAttr ($node+".layer") 8;break;
+    case "LAYER_z":         setAttr ($node+".layer") 9;break;
+    case "LAYER_nor":       setAttr ($node+".layer") 10;break;
+    case "LAYER_ao":        setAttr ($node+".layer") 11;break;
+    case "LAYER_shad":      setAttr ($node+".layer") 12;break;
+    case "LAYER_vec":       setAttr ($node+".layer") 13;break;
+    case "LAYER_uv":        setAttr ($node+".layer") 14;break;
+    case "LAYER_oid":       setAttr ($node+".layer") 15;break;
+    case "LAYER_mid":       setAttr ($node+".layer") 16;break;
+    case "LAYER_reflao":    setAttr ($node+".layer") 17;break;
+    case "LAYER_refrao":    setAttr ($node+".layer") 18;break;
+    case "LAYER_globillum": setAttr ($node+".layer") 19;break;
+    case "LAYER_translucent": setAttr ($node+".layer") 20;break;
+    case "LAYER_sssfront":  setAttr ($node+".layer") 21;break;
+    case "LAYER_sssmiddle": setAttr ($node+".layer") 22;break;
+    case "LAYER_sssback": setAttr ($node+".layer") 23;break;
+    default: setAttr ($node+".layer") 1;
+  }
+}
+
+global proc string[] ccgRenderLayer_findCcgShaders(int $onlyAssigned)
+{
+  string $nodeTypes[] = ccgRenderLayer_nodeType();
+  int $size1 = size($nodeTypes);
+  string $tempArray[];
+  int $i,$j,$k;
+  string $result[];
+  
+  for($i=0,$k=0;$i<$size1;$i++)
+  {
+    string $class[] = `getClassification $nodeTypes[$i]`;
+    if($class[0]!="")
+    {
+      $tempArray = `ls -fl -type $nodeTypes[$i]`;
+      int $size2 = size($tempArray);
+      for($j=0;$j<$size2;$j++)
+      {
+        if($onlyAssigned)
+        {
+          int $assigned = 0;
+          string $SG[] = `listConnections -s 0 -d 1 -scn 1 -t "shadingEngine" $tempArray[$j]`;
+          int $m;
+          for($m=0;$m<size($SG);$m++)
+          {
+            string $obj[] = `listConnections -s 1 -d 0 -scn 1 ($SG[$j]+".dagSetMembers")`;
+            if(size($obj)!=0)
+            {
+              $assigned = 1;
+              break;
+            }
+          }
+          if($assigned)
+          {
+            $result[$k] = $tempArray[$j];
+            $k++;
+          }
+        }else {
+                $result[$k] = $tempArray[$j];
+                $k++;
+              }
+      }
+    }
+  }
+  
+  return `stringArrayRemoveDuplicates $result`;
+}
+
+global proc float[] ccgRenderLayer_getAttrValueFloat(string $node, string $attr)
+{
+  //float[0] means absent attribute
+  //attribute type: float, float3, long, enum, string, bool
+  float $result[];
+  if(`attributeExists $attr $node`)
+  {
+    $result[0] = 1;
+    string $attrNode = ($node+"."+$attr);
+    string $attrType = `getAttr -type $attrNode`;
+    switch($attrType)
+    {
+      case "float":   float $tmpf = `getAttr $attrNode`;
+                      $result[1] = $tmpf;
+                      break;
+      case "float3":  float $tmpf3[] = `getAttr $attrNode`;
+                      $result[1] = $tmpf3[0];
+                      $result[2] = $tmpf3[1];
+                      $result[3] = $tmpf3[2];
+                      break;
+      case "long":    float $tmpf = `getAttr $attrNode`;
+                      $result[1] = $tmpf;
+                      break;
+      case "long3":   float $tmpf3[] = `getAttr $attrNode`;
+                      $result[1] = $tmpf3[0];
+                      $result[2] = $tmpf3[1];
+                      $result[3] = $tmpf3[2];
+                      break;
+      case "enum":    int $tmpi = `getAttr $attrNode`;
+                      $result[1] = $tmpi;
+                      break;
+      case "bool":    int $tmpi = `getAttr $attrNode`;
+                      $result[1] = $tmpi;
+                      break;
+    }
+  }else $result[0] = 0;
+  
+  return $result;
+}
+
+global proc string[] ccgRenderLayer_getAttrValueString(string $node, string $attr)
+{
+  //float[0] means absent attribute
+  //attribute type: float, float3, long, enum, string, bool
+  string $result[];
+  if(`attributeExists $attr $node`)
+  {
+    $result[0] = "TRUE";
+    string $attrNode = ($node+"."+$attr);
+    string $attrType = `getAttr -type $attrNode`;
+    switch($attrType)
+    {
+      case "string":   string $tmps = `getAttr $attrNode`;
+                       $result[1] = $tmps;
+                       break;
+    }
+  }else $result[0] = "NULL";
+  
+  return $result;
+}
+
+global proc ccgRenderLayer_renderPassSettingForIBL(string $shader)
+{
+  int $enable   = `optionMenuGrp -q -sl ccgRL_optionIBL1`;
+  int $iblMode  = `optionMenuGrp -q -sl ccgRL_optionIBL1` - 1;
+  float $angle = `floatSliderGrp -q -v ccgRL_floatslider_ibl1`;
+  int $space    = `optionMenuGrp -q -sl ccgRL_optionIBL2` - 1;
+  int $add2combined = `checkBoxGrp -q -v1 ccgRL_checkIBL_add1`;
+  int $shadow   = `optionMenuGrp -q -sl ccgRL_optionIBL3` - 1;
+  float $min    = `floatFieldGrp -q -v1 ccgRL_float_ibl1`;
+  float $max    = `floatFieldGrp -q -v1 ccgRL_float_ibl2`;
+  float $bright[] = `colorSliderGrp -q -rgb ccgRL_color_ibl1`;
+  float $dark[] = `colorSliderGrp -q -rgb ccgRL_color_ibl2`;
+  int $emitDiffuse = `checkBoxGrp -q -v1 ccgRL_checkIBL1`;
+  int $emitSpecular = `checkBoxGrp -q -v2 ccgRL_checkIBL1`;
+  
+  if(`attributeExists "ibl_enable" $shader`)
+      setAttr ($shader+".ibl_enable") $iblMode;
+      
+  switch($enable){
+    case 1: break;
+    case 2: if(`attributeExists "bent_space" $shader`)
+              setAttr ($shader+".bent_space") $space;
+            if(`attributeExists "add_to_combined" $shader`)
+              setAttr ($shader+".add_to_combined") $add2combined;
+            break;
+    case 3: if(`attributeExists "ibl_angle" $shader`)
+            setAttr ($shader+".ibl_angle") $angle;
+            break;
+    case 4: if(`attributeExists "bent_space" $shader`)
+              setAttr ($shader+".bent_space") $space;
+            if(`attributeExists "ibl_shadow_mode" $shader`)
+              setAttr ($shader+".ibl_shadow_mode") $shadow;
+            if(`attributeExists "min_dist" $shader`)
+              setAttr ($shader+".min_dist") $min;
+            if(`attributeExists "max_dist" $shader`)
+              setAttr ($shader+".max_dist") $max;
+            if(`attributeExists "ibl_bright" $shader`)
+              setAttr ($shader+".ibl_bright") -type double3 $bright[0] $bright[1] $bright[2];
+            if(`attributeExists "ibl_dark" $shader`)
+              setAttr ($shader+".ibl_dark") -type double3 $dark[0] $dark[1] $dark[2];
+            if(`attributeExists "ibl_emit_diffuse" $shader`)
+              setAttr ($shader+".ibl_emit_diffuse") $emitDiffuse;
+            if(`attributeExists "ibl_emit_specular" $shader`)
+              setAttr ($shader+".ibl_emit_specular") $emitSpecular;
+            break;
+  }                   
+}
+
+global proc int ccgRenderLayer_checkBentNode()
+{
+  global string $gCcgRenderLayer_CcgWithoutBentNodes[];
+  global string $gCcgRenderLayer_CcgWithBentNodes[];
+  global string $gCcgRenderLayer_BentNodes[];
+  
+  clear $gCcgRenderLayer_CcgWithoutBentNodes;
+  clear $gCcgRenderLayer_CcgWithBentNodes;
+  clear $gCcgRenderLayer_BentNodes;
+  
+  string $ccgShaders[] = `ccgRenderLayer_findCcgShaders 0`;
+  int $i,$num,$j,$k;
+  $num = size($ccgShaders);
+  string $bentNodes[];
+  int $gA, $gB;
+  
+  for($i=0,$k=0,$gA=0,$gB=0;$i<$num;$i++)
+  {
+    if(`attributeExists "bent" $ccgShaders[$i]`)
+    {
+      string $src[] = `listConnections -s 1 -d 0 -scn 1 ($ccgShaders[$i]+".bent")`;
+      for($j=0;$j<size($src);$j++)
+      {
+        $bentNodes[$k] = $src[$j];
+        $k++;
+      }
+      if($j==0) 
+      {
+        $gCcgRenderLayer_CcgWithoutBentNodes[$gA] = $ccgShaders[$i];
+        $gA++;
+      }else {
+              $gCcgRenderLayer_CcgWithBentNodes[$gB] = $ccgShaders[$i];
+              $gB++;
+            }
+    }
+  }
+  $gCcgRenderLayer_BentNodes = `stringArrayRemoveDuplicates $bentNodes`;
+  
+  //return code: 1 = all ccg shaders' bent attribute have been connected by shaders
+  //             2 = all ccg shaders' bent attribute have been NOT connected yet
+  //             3 = Some ccg shaders' bent attribute have been connected, and the others have been not connected
+  if(size($gCcgRenderLayer_CcgWithoutBentNodes)==0)
+    return 1;
+  else if(size($gCcgRenderLayer_CcgWithBentNodes)==0)
+          return 2;
+      else if(size($gCcgRenderLayer_CcgWithoutBentNodes)!=0 && size($gCcgRenderLayer_CcgWithBentNodes)!=0)
+              return 3;
+  return 0;
+}
+
+global proc ccgRenderLayer_breakBentNode(int $break,string $bentNode, string $nodesToBreak[])
+{
+  int $i;
+  int $num = size($nodesToBreak);
+  if($break) //1 = break, 0 = delete
+  {
+    for($i=0;$i<$num;$i++)
+    {
+      string $src[] = `listConnections -s 1 -d 0 -scn 1 -p 1 ($nodesToBreak[$i]+".bent")`;
+      disconnectAttr $src[0] ($nodesToBreak[$i]+".bent");
+      $src = `listConnections -s 1 -d 0 -scn 1 -p 1 ($nodesToBreak[$i]+".bentA")`;
+      disconnectAttr $src[0] ($nodesToBreak[$i]+".bentA");
+    }
+  }else {
+          for($i=0;$i<$num;$i++)
+          {
+            string $src[] = `listConnections -s 1 -d 0 -scn 1 -p 1 ($nodesToBreak[$i]+".bent")`;
+            disconnectAttr $src[0] ($nodesToBreak[$i]+".bent");
+            $src = `listConnections -s 1 -d 0 -scn 1 -p 1 ($nodesToBreak[$i]+".bentA")`;
+            disconnectAttr $src[0] ($nodesToBreak[$i]+".bentA");
+            string $buffer[];
+            tokenize $src[0] "." $buffer;
+            if($bentNode!=$buffer[0])delete $buffer[0];
+          }
+        }
+}
+
+global proc ccgRenderLayer_connectBentNode(string $bentNode, string $nodesToConnect[])
+{
+  int $i;
+  int $num = size($nodesToConnect);
+  if(`attributeExists "outValue" $bentNode` && `attributeExists "outValueA" $bentNode`)
+  {
+    for($i=0;$i<$num;$i++)
+    {
+      if(!`isConnected ($bentNode+".outValue") ($nodesToConnect[$i]+".bent")`)
+        connectAttr -f ($bentNode+".outValue") ($nodesToConnect[$i]+".bent");
+      if(!`isConnected ($bentNode+".outValueA") ($nodesToConnect[$i]+".bentA")`)
+        connectAttr -f ($bentNode+".outValueA") ($nodesToConnect[$i]+".bentA");
+    }
+  }
+}
+
+global proc int ccgRenderLayer_setBentNormal()
+{
+  global string $gCcgRenderLayer_CcgWithoutBentNodes[];
+  global string $gCcgRenderLayer_CcgWithBentNodes[];
+  global string $gCcgRenderLayer_BentNodes[];
+  
+  string $confirmInfo;
+  //string $sel[] = `ls -sl`;
+  if(`objExists ccgIblBentNormalNode`) delete ccgIblBentNormalNode;
+  createNode "mib_amb_occlusion" -n ccgIblBentNormalNode;
+  setAttr ccgIblBentNormalNode.samples 32;
+  setAttr ccgIblBentNormalNode.output_mode 2;
+  setAttr ccgIblBentNormalNode.occlusion_in_alpha 1;
+  string $bentNode = "ccgIblBentNormalNode";
+//  if(size($sel)==1 && `nodeType $sel[0]`=="mib_amb_occlusion")
+//  {
+//    $bentNode = $sel[0];
+//  }else {
+//    warning "You must select one mib_amb_occlusion shader!";
+//    return 0;
+//  }
+  
+  int $checkBent = `ccgRenderLayer_checkBentNode`;
+  if($checkBent==1)
+  {
+    if(size($gCcgRenderLayer_BentNodes)>1)
+    {
+      $confirmInfo = `confirmDialog -title "Confirm" -message "All CcgShaders' bent attribute have been already connected by different bent shaders!\nWe highly suggest that there had better be only one bent shader.\nSelect \"Break and connect\" will break all these bent shaders and connect only the selected bent node."
+        -button "Break and connect" -button "Delete and connect" -button "Forget it" -defaultButton "Forget it"
+        -cancelButton "Forget it" -dismissString "Forget it"`;
+    }else {
+            $confirmInfo = `confirmDialog -title "Confirm" -message "All CcgShaders' bent attribute have been already connected!\nSelect \"Break and connect\" will break all these bent shaders and connect only the selected bent node."
+              -button "Break and connect" -button "Delete and connect" -button "Forget it" -defaultButton "Forget it"
+              -cancelButton "Forget it" -dismissString "Forget it"`;
+          }
+    if($confirmInfo!="Forget it")
+    {
+      if($confirmInfo=="Break and connect")
+      {
+        ccgRenderLayer_breakBentNode(1, $bentNode, $gCcgRenderLayer_CcgWithBentNodes);
+        ccgRenderLayer_connectBentNode($bentNode, $gCcgRenderLayer_CcgWithBentNodes);
+      }else if($confirmInfo=="Delete and connect")
+            {
+              ccgRenderLayer_breakBentNode(0, $bentNode, $gCcgRenderLayer_CcgWithBentNodes);
+              ccgRenderLayer_connectBentNode($bentNode, $gCcgRenderLayer_CcgWithBentNodes);
+            }
+      if(`attributeExists "output_mode" $bentNode`)
+        setAttr ($bentNode+".output_mode") 2;
+      if(`attributeExists "occlusion_in_alpha" $bentNode`)
+        setAttr ($bentNode+".occlusion_in_alpha") 1;
+    }
+  }else if($checkBent==2)
+        {
+          ccgRenderLayer_connectBentNode($bentNode, $gCcgRenderLayer_CcgWithoutBentNodes);
+          if(`attributeExists "output_mode" $bentNode`)
+            setAttr ($bentNode+".output_mode") 2;
+          if(`attributeExists "occlusion_in_alpha" $bentNode`)
+            setAttr ($bentNode+".occlusion_in_alpha") 1;
+        }else if($checkBent==3)
+              {
+                if(size($gCcgRenderLayer_BentNodes)>1)
+                {
+                  $confirmInfo = `confirmDialog -title "Confirm" -message "Some CcgShaders' bent attribute have been already connected by different bent shaders!\nWe highly suggest that there had better be only one bent shader.\nSelect \"Break and connect\" will break all these bent shaders and connect only the selected bent node.\nSelect \"Just connect\" will connect the selected bent node to those Ccg shaders which never been connected."
+                    -button "Break and connect" -button "Delete and connect" -button "Just connect" -button "Forget it" -defaultButton "Forget it"
+                    -cancelButton "Forget it" -dismissString "Forget it"`;
+                }else {
+                        $confirmInfo = `confirmDialog -title "Confirm" -message "Some CcgShaders' bent attribute have been already connected!\nSelect \"Break and connect\" will break all these bent shaders and connect only the selected bent node.\nSelect \"Just connect\" will connect the selected bent node to those Ccg shaders which never been connected."
+                          -button "Break and connect" -button "Delete and connect" -button "Just connect" -button "Forget it" -defaultButton "Forget it"
+                          -cancelButton "Forget it" -dismissString "Forget it"`;
+                      }     
+                if($confirmInfo!="Forget it")
+                {
+                  if($confirmInfo=="Break and connect")
+                  {
+                    ccgRenderLayer_breakBentNode(1, $bentNode, $gCcgRenderLayer_CcgWithBentNodes);
+                    ccgRenderLayer_connectBentNode($bentNode, $gCcgRenderLayer_CcgWithBentNodes);
+                    ccgRenderLayer_connectBentNode($bentNode, $gCcgRenderLayer_CcgWithoutBentNodes);
+                  }else if($confirmInfo=="Delete and connect")
+                        {
+                          ccgRenderLayer_breakBentNode(0, $bentNode, $gCcgRenderLayer_CcgWithBentNodes);
+                          ccgRenderLayer_connectBentNode($bentNode, $gCcgRenderLayer_CcgWithBentNodes);
+                          ccgRenderLayer_connectBentNode($bentNode, $gCcgRenderLayer_CcgWithoutBentNodes);
+                        }else if($confirmInfo=="Just connect") ccgRenderLayer_connectBentNode($bentNode, $gCcgRenderLayer_CcgWithoutBentNodes);
+                  if(`attributeExists "output_mode" $bentNode`)
+                    setAttr ($bentNode+".output_mode") 2;
+                  if(`attributeExists "occlusion_in_alpha" $bentNode`)
+                    setAttr ($bentNode+".occlusion_in_alpha") 1;
+                }
+              }
+   return 1;
+}
+
+global proc ccgRenderLayer_selectBentNode()
+{
+  global string $gCcgRenderLayer_CcgWithoutBentNodes[];
+  global string $gCcgRenderLayer_CcgWithBentNodes[];
+  global string $gCcgRenderLayer_BentNodes[];
+  ccgRenderLayer_checkBentNode;
+  print $gCcgRenderLayer_BentNodes;
+  if(size($gCcgRenderLayer_BentNodes)>1) warning "More than one bent node have been connected to Ccg shaders! We highly suggest connect only one bent node.";
+  select $gCcgRenderLayer_BentNodes;
+}
+
+global proc ccgRenderLayer_deleteBentNode()
+{
+  global string $gCcgRenderLayer_CcgWithoutBentNodes[];
+  global string $gCcgRenderLayer_CcgWithBentNodes[];
+  global string $gCcgRenderLayer_BentNodes[];
+  ccgRenderLayer_checkBentNode;
+  ccgRenderLayer_breakBentNode(1, "", $gCcgRenderLayer_CcgWithBentNodes);
+  delete $gCcgRenderLayer_BentNodes;
+  print "These bent nodes was removed: \n";
+  print $gCcgRenderLayer_BentNodes;
+}
+
+global proc ccgRenderLayer_renderPassSetting(int $enLayer, string $whichLayer, int $enDepth, float $zmin, float $zmax, int $diffOpacity, int $setOptions)
+{
+  string $nodeTypes[];
+  string $tempStr,$sel[],$typeStr,$tempArray[],$buffer[],$class[];
+  int $i,$j,$k,$size1,$size2,$size3;
+
+  if(`objExists mentalrayGlobals`)
+  {
+    if($setOptions)
+    {
+        $nodeTypes = ccgRenderLayer_nodeType();
+        $size1 = size($nodeTypes);
+        clear $tempArray;
+        
+        for($i=0;$i<$size1;$i++)
+        {
+          $class = `getClassification $nodeTypes[$i]`;
+          if($class[0]!="")
+          {
+            $tempArray = `ls -fl -type $nodeTypes[$i]`;
+            $size2 = size($tempArray);
+            for($j=0;$j<$size2;$j++)
+            {
+              if(`attributeExists "layer" $tempArray[$j]`&&$enLayer)
+                ccgRenderLayer_setLayer($tempArray[$j], $whichLayer);
+              if(`attributeExists "depthLimitMin" $tempArray[$j]`&&$enDepth)
+                setAttr ($tempArray[$j]+".depthLimitMin") $zmin;
+              if(`attributeExists "depthLimitMax" $tempArray[$j]`&&$enDepth)
+                setAttr ($tempArray[$j]+".depthLimitMax") $zmax;
+              if(`attributeExists "diffuseOpacity" $tempArray[$j]`)
+                setAttr ($tempArray[$j]+".diffuseOpacity") $diffOpacity;
+              ccgRenderLayer_renderPassSettingForIBL($tempArray[$j]);
+            }
+          }
+        }
+    }else {
+             $sel = `ls -sl -fl`;
+             $size1 = size($sel);
+             for($i=0;$i<$size1;$i++)
+             {
+                $tempStr = `nodeType $sel[$i]`;
+                if(`gmatch $tempStr "*ccg*"`)
+                {
+                  if(`attributeExists "layer" $sel[$i]`&&$enLayer)
+                    ccgRenderLayer_setLayer($sel[$i], $whichLayer);
+                  if(`attributeExists "depthLimitMin" $sel[$i]`&&$enDepth)
+                    setAttr ($sel[$i]+".depthLimitMin") $zmin;
+                  if(`attributeExists "depthLimitMax" $sel[$i]`&&$enDepth)
+                    setAttr ($sel[$i]+".depthLimitMax") $zmax;
+                  ccgRenderLayer_renderPassSettingForIBL($sel[$i]);
+                }
+                else if($tempStr=="transform")
+                      {
+                        $tempArray = `listRelatives -s $sel[$i]`;
+                        $buffer = `listConnections -s 0 -d 1 -t "shadingEngine" $tempArray[0]`;
+                        $size2 = size($buffer);
+                        clear $tempArray;
+                        for($j=0;$j<$size2;$j++)
+                        {
+                          $tempArray = `listConnections -s 1 -d 0 $buffer[$j]`;
+                          $size3 = size($tempArray);
+                          for($k=0;$k<$size3;$k++)
+                          {
+                            $tempStr = `nodeType $tempArray[$k]`;
+                            if(`gmatch $tempStr "*ccg*"`)
+                            {
+                              if(`attributeExists "layer" $tempArray[$k]`&&$enLayer)
+                                ccgRenderLayer_setLayer($tempArray[$k], $whichLayer);
+                              if(`attributeExists "depthLimitMin" $tempArray[$k]`&&$enDepth)
+                                setAttr ($tempArray[$k]+".depthLimitMin") $zmin;
+                              if(`attributeExists "depthLimitMax" $tempArray[$k]`&&$enDepth)
+                                setAttr ($tempArray[$k]+".depthLimitMax") $zmax;
+                              if(`attributeExists "diffuseOpacity" $tempArray[$j]`)
+                                setAttr ($tempArray[$j]+".diffuseOpacity") $diffOpacity;
+                              ccgRenderLayer_renderPassSettingForIBL($tempArray[$k]);
+                            }
+                          }
+                        }
+                      }
+             }
+          }
+  }else warning "startup or select mental ray render first.";
+}
+
+global proc gCcgGeoFramebufferPreRenderCmd()
+{
+    if(`objExists ccgGeoShaderFramebuffers` && `getAttr ccgGeoShaderFramebuffers.enable`) {
+        string $file = `getAttr ccgGeoShaderFramebuffers.filename`;
+        string $dir = dirname($file);
+        if(!`filetest -d $dir`) sysFile -md $dir;
+        int $format = `getAttr ccgGeoShaderFramebuffers.format`;
+        int $exr = `getAttr ccgGeoShaderFramebuffers.Enable_Multi_channel_OpenExr`;
+        int $subfolder = `getAttr ccgGeoShaderFramebuffers.enableSubFolder`;
+        if( ($format!=0||$exr==0) && $subfolder ){
+            string $fb = `getAttr ccgGeoShaderFramebuffers.fbWriteString`;
+            string $buffer[];
+            tokenize $fb ";" $buffer;
+            int $fb_size = size($buffer);
+            int $i; 
+            string $tmp[];
+            for($i=0;$i<$fb_size;$i++){
+                tokenize $buffer[$i] "=" $tmp;
+                string $newdir = $dir + "/" + strip($tmp[0]);
+                if(!`filetest -d $newdir`) sysFile -md $newdir;
+            }
+        }
+    }
+}
+
+global proc ccgRenderLayer_multiPassOutputScriptJob(int $enable)
+{
+  if($enable){
+      if(!`objExists ccgGeoFramebufferScriptNode`){ 
+          string $cmd = "global proc gCcgGeoFramebufferPreRenderCmd()\r\n"+
+                        "{\r\n\t"+
+                            "if(`objExists ccgGeoShaderFramebuffers` && `getAttr ccgGeoShaderFramebuffers.enable`) {\r\n\t\t"+
+                                "string $file = `getAttr ccgGeoShaderFramebuffers.filename`;\r\n\t\t"+
+                                "string $dir = dirname($file);\r\n\t\t"+
+                                "if(!`filetest -d $dir`) sysFile -md $dir;\r\n\t\t"+
+                                "int $format = `getAttr ccgGeoShaderFramebuffers.format`;\r\n\t\t"+
+                                "int $exr = `getAttr ccgGeoShaderFramebuffers.Enable_Multi_channel_OpenExr`;\r\n\t\t"+
+                                "int $subfolder = `getAttr ccgGeoShaderFramebuffers.enableSubFolder`;\r\n\t\t"+
+                                "if( ($format!=0||$exr==0) && $subfolder ){\r\n\t\t\t"+
+                                    "string $fb = `getAttr ccgGeoShaderFramebuffers.fbWriteString`;\r\n\t\t\t"+
+                                    "string $buffer[];\r\n\t\t\t"+
+                                    "tokenize $fb \";\" $buffer;\r\n\t\t\t"+
+                                    "int $fb_size = size($buffer);\r\n\t\t\t"+
+                                    "int $i; \r\n\t\t\t"+
+                                    "string $tmp[];\r\n\t\t\t"+
+                                    "for($i=0;$i<$fb_size;$i++){\r\n\t\t\t\t"+
+                                        "tokenize $buffer[$i] \"=\" $tmp;\r\n\t\t\t\t"+
+                                        "string $newdir = $dir + \"/\" + strip($tmp[0]);\r\n\t\t\t\t"+
+                                        "if(!`filetest -d $newdir`) sysFile -md $newdir;\r\n\t\t\t"+
+                                    "}\r\n\t\t"+
+                                "}\r\n\t"+
+                            "}\r\n"+
+                        "}\r\n\r\n"+
+                        "string $previousCmd = `getAttr defaultRenderGlobals.preMel`;\r\n"+
+                        "if(!`gmatch $previousCmd \"*gCcgGeoFramebufferPreRenderCmd*\"`){\r\n\t"+
+                            "string $preRenderCmd;\r\n\t"+
+                            "if($previousCmd==\"\") $preRenderCmd=\"gCcgGeoFramebufferPreRenderCmd;\";\r\n\t"+
+                            "else $preRenderCmd = \"gCcgGeoFramebufferPreRenderCmd;\" + strip($previousCmd) + \";\";\r\n\t"+
+                            "setAttr -type \"string\" defaultRenderGlobals.preMel $preRenderCmd;\r\n"+
+                        "}";
+          
+          scriptNode -beforeScript $cmd -st 1 -n "ccgGeoFramebufferScriptNode";
+
+          string $previousCmd = `getAttr defaultRenderGlobals.preMel`;
+          if(!`gmatch $previousCmd "*gCcgGeoFramebufferPreRenderCmd*"`){
+              string $preRenderCmd;
+              if($previousCmd=="") $preRenderCmd = "gCcgGeoFramebufferPreRenderCmd;";
+              else $preRenderCmd = "gCcgGeoFramebufferPreRenderCmd;" + strip($previousCmd) + ";";
+              setAttr -type "string" defaultRenderGlobals.preMel $preRenderCmd;
+          }
+      }
+  }else {
+            if(`objExists ccgGeoFramebufferScriptNode`) delete ccgGeoFramebufferScriptNode;
+            string $preRenderCmd = `getAttr defaultRenderGlobals.preMel`;
+            if(`gmatch $preRenderCmd "*gCcgGeoFramebufferPreRenderCmd;*"`){
+                string $previousCmd = `substitute "gCcgGeoFramebufferPreRenderCmd;" $preRenderCmd ""`;
+                setAttr -type "string" defaultRenderGlobals.preMel $previousCmd;
+            }
+        }
+}
+
+global proc ccgRenderLayer_delete(int $method)
+{
+  int $i,$j,$size1,$size2;
+  string $tempArray[],$tempArray2[],$nodeTypes[];
+  
+  if($method==0)  // output shader method
+  {
+    clear $tempArray;
+    $tempArray = `ls -fl -type mentalrayUserBuffer`;
+    for($i=0;$i<size($tempArray);$i++)
+    {
+      clear $tempArray2;
+      $tempArray2 = `listConnections -s off -d on -p on -sh on -scn on ($tempArray[$i]+".message")`;
+      for($j=0;$j<size($tempArray2);$j++)
+        disconnectAttr ($tempArray[$i]+".message") $tempArray2[$j];
+      delete $tempArray[$i];
+    }
+    
+    if(`objExists "mrOutputExr"`)
+    {
+      clear $tempArray;
+      $tempArray = `listConnections -s off -d on -p on -sh on -scn on mrOutputExr.message`;
+      for($i=0;$i<size($tempArray);$i++)
+        disconnectAttr mrOutputExr.message $tempArray[$i];
+      delete mrOutputExr;
+    }
+    
+    $nodeTypes = ccgRenderLayer_nodeType();
+    $size1 = size($nodeTypes);
+    clear $tempArray;
+    for($i=0;$i<$size1;$i++)
+    {
+      $tempArray = `ls -fl -type $nodeTypes[$i]`;
+      $size2 = size($tempArray);
+      for($j=0;$j<$size2;$j++)
+      {
+        if(`attributeExists "fbWriteString" $tempArray[$j]`)
+          setAttr -type "string" ($tempArray[$j]+".fbWriteString") "";
+        if(`attributeExists "passesInOnce" $tempArray[$j]`)
+          setAttr ($tempArray[$j]+".passesInOnce") 0;
+      }
+    }
+  }else { // geometry shader method
+          if(`objExists ccgGeoShaderFramebuffers`) delete ccgGeoShaderFramebuffers;
+          if(`objExists ccgGeoShaderCube`) delete ccgGeoShaderCube;
+          ccgRenderLayer_multiPassOutputScriptJob(0);
+          
+          $nodeTypes = ccgRenderLayer_nodeType();
+          $size1 = size($nodeTypes);
+          clear $tempArray;
+          for($i=0;$i<$size1;$i++)
+          {
+            $tempArray = `ls -fl -type $nodeTypes[$i]`;
+            $size2 = size($tempArray);
+            for($j=0;$j<$size2;$j++)
+            {
+              if(`attributeExists "fbWriteString" $tempArray[$j]`)
+                setAttr -type "string" ($tempArray[$j]+".fbWriteString") "";
+              if(`attributeExists "passesInOnce" $tempArray[$j]`)
+                setAttr ($tempArray[$j]+".passesInOnce") 0;
+            }
+          }
+        }
+        
+   if(`objExists miDefaultFramebuffer`)setAttr miDefaultFramebuffer.datatype 2;
+}
+
+global proc int ccgRenderLayer_belongNodeType(string $node)
+{
+  string $knownType[] = {
+    //"defaultShaderList",
+    //"materialInfo",
+    "shadingEngine"
+    };
+    
+  int $num = size($knownType);
+  int $i;
+  int $belong = 0;
+  
+  for($i=0;$i<$num;$i++)
+  {
+    if(`nodeType $node`==$knownType[$i])
+    {
+      $belong = 1;
+      break;
+    }
+  }
+  return $belong;
+}
+
+global proc int ccgRenderLayer_isTerminateShader(string $shader)
+{
+  if(`attributeExists "message" $shader`)
+  {
+    string $dest[] = `listConnections -s 0 -d 1 -scn 1 ($shader+".message")`;
+    int $i; int $num = size($dest);
+    for($i=0;$i<$num;$i++)
+    {
+      if(`ccgRenderLayer_belongNodeType $dest[$i]`) return 1;
+    }
+  }
+  
+  if(`attributeExists "outValue" $shader`)
+  {
+    string $dest[] = `listConnections -s 0 -d 1 -scn 1 ($shader+".outValue")`;
+    int $i; int $num = size($dest);
+    for($i=0;$i<$num;$i++)
+    {
+      if(`ccgRenderLayer_belongNodeType $dest[$i]`) return 1;
+    }
+  }
+  
+  if(`attributeExists "outValueA" $shader`)
+  {
+    string $dest[] = `listConnections -s 0 -d 1 -scn 1 ($shader+".outValueA")`;
+    int $i; int $num = size($dest);
+    for($i=0;$i<$num;$i++)
+    {
+      if(`ccgRenderLayer_belongNodeType $dest[$i]`) return 1;
+    }
+  }
+
+  return 0;
+}
+
+global proc int[] ccgRenderLayer_multiPassOutput_setFramebufferTypeDefault( string $pass )
+{
+  /*
+  0 rgba
+  1 rgba_16
+  2 rgba_fp
+  3 rgb
+  4 rgb_16
+  5 rgb_fp
+  6 a
+  7 a_16
+  8 a_fp
+  9 z
+  10 n
+  11 m
+  12 tag
+  13 coverage
+  */
+  switch ($pass)
+  {
+    case "combined":        return {2,1}; break;
+    case "col":           return {5,1}; break;
+    case "diff":          return {2,1}; break;
+    case "ambi":          return {5,1}; break;
+    case "spec":          return {5,1}; break;
+    case "incan":         return {5,1}; break;
+    case "refl":          return {5,1}; break;
+    case "refr":          return {2,1}; break;
+    case "z":           return {9,1}; break;
+    case "nor":           return {10,0}; break;
+    case "ao":            return {3,1}; break;
+    case "shad":          return {2,1}; break;
+    case "vec":           return {11,0}; break;
+    case "uv":            return {5,0}; break;
+    case "oid":           return {3,1}; break;
+    case "mid":           return {3,1}; break;
+    case "reflao":          return {3,1}; break;
+    case "refrao":          return {3,1}; break;
+    case "globillum":       return {5,1}; break;
+    case "translucent":       return {5,1}; break;
+    case "sssfront":        return {5,1}; break;
+    case "sssmiddle":       return {5,1}; break;
+    case "sssback":         return {5,1}; break;
+    default:            return {2,1};
+  }
+}
+
+global proc ccgRenderLayer_multiPassOutput_setFramebufferType( string $passesname[] )
+{
+  int $passes_size = size($passesname);
+  int $i,$j;
+  for($i=0,$j=1;$i<$passes_size;$i++){
+    if(!startsWith($passesname[$i]," ")){
+      int $type[] = ccgRenderLayer_multiPassOutput_setFramebufferTypeDefault($passesname[$i]);
+      if(`attributeExists ("type_fb_"+$j) ccgGeoShaderFramebuffers`)
+      setAttr ("ccgGeoShaderFramebuffers.type_fb_"+$j) $type[0];
+      if(`attributeExists ("filter_"+$j) ccgGeoShaderFramebuffers`)
+      setAttr ("ccgGeoShaderFramebuffers.filter_"+$j) $type[1];
+      $j++;
+    }
+  }
+}
+
+global proc ccgRenderLayer_multiPassOutput_setRenderLayerControls(int $write)
+{
+  string $fbWrite;
+  if(`objExists ccgGeoShaderFramebuffers` && `attributeExists "fbWriteString" ccgGeoShaderFramebuffers`)
+      $fbWrite = `getAttr ccgGeoShaderFramebuffers.fbWriteString`;
+  else $fbWrite = "";
+  
+  string $obj[] = `ls -type "transform" -fl`;
+  string $shadingEngines[];
+  int $objSize = size($obj);
+  int $i,$j;
+  clear $shadingEngines;
+  for($i=0,$j=0;$i<$objSize;$i++){
+    string $shading[] = `listSets -ets -t 1 -o $obj[$i]`;
+    int $shadingSize = size($shading);
+    int $m;
+    for($m=0;$m<$shadingSize;$m++){
+      $shadingEngines[$j] = $shading[$m];
+      $j++;
+    }
+  }
+  
+  string $subshader[];
+  string $ccgType[] = ccgRenderLayer_nodeType();
+  $shadingEngines = stringArrayRemoveDuplicates($shadingEngines);
+  int $num = size($shadingEngines);
+  for($i=0;$i<$num;$i++){
+    string $mat[] = `listConnections -s 1 -d 0 -scn 1 ($shadingEngines[$i]+".miMaterialShader")`;
+    if($mat[0]!="" && ccgRenderLayer_isCcgShaders($mat[0],$ccgType)){
+      if(`nodeType $mat[0]`=="ccg_base_mix20layers"){
+          //take care of ccg_base_mix20layers shader, the subshaders should also be written
+          int $n;
+          int $n_layers = `getAttr ($mat[0]+".g_layers_number")`;
+          for($n=1;$n<=$n_layers;$n++){
+            clear $subshader;
+            $subshader = `listConnections -s 1 -d 0 -scn 1 ($mat[0]+".shader_"+$n)`;
+            if($subshader[0]!="" && ccgRenderLayer_isCcgShaders($subshader[0],$ccgType)){
+              if(`attributeExists "fbWriteString" $subshader[0]`){
+                if($write)  setAttr -type "string" ($subshader[0]+".fbWriteString") $fbWrite;
+                else setAttr -type "string" ($subshader[0]+".fbWriteString") "";
+              }
+              if(`attributeExists "passesInOnce" $subshader[0]`){
+                if($write)  setAttr ($subshader[0]+".passesInOnce") 1;
+                else setAttr ($subshader[0]+".passesInOnce") 0;
+              }
+            }
+          }
+      }
+      if(`nodeType $mat[0]`=="ccg_base_twosided"){
+          //take care of ccg_base_twosided shader, the subshaders should also be written
+            clear $subshader;
+            $subshader = `listConnections -s 1 -d 0 -scn 1 ($mat[0]+".front_shader")`;
+            if($subshader[0]!="" && ccgRenderLayer_isCcgShaders($subshader[0],$ccgType)){
+              if(`attributeExists "fbWriteString" $subshader[0]`){
+                if($write)  setAttr -type "string" ($subshader[0]+".fbWriteString") $fbWrite;
+                else setAttr -type "string" ($subshader[0]+".fbWriteString") "";
+              }
+              if(`attributeExists "passesInOnce" $subshader[0]`){
+                if($write)  setAttr ($subshader[0]+".passesInOnce") 1;
+                else setAttr ($subshader[0]+".passesInOnce") 0;
+              }
+            }
+            
+            clear $subshader;
+            $subshader = `listConnections -s 1 -d 0 -scn 1 ($mat[0]+".back_shader")`;
+            if($subshader[0]!="" && ccgRenderLayer_isCcgShaders($subshader[0],$ccgType)){
+              if(`attributeExists "fbWriteString" $subshader[0]`){
+                if($write)  setAttr -type "string" ($subshader[0]+".fbWriteString") $fbWrite;
+                else setAttr -type "string" ($subshader[0]+".fbWriteString") "";
+              }
+              if(`attributeExists "passesInOnce" $subshader[0]`){
+                if($write)  setAttr ($subshader[0]+".passesInOnce") 1;
+                else setAttr ($subshader[0]+".passesInOnce") 0;
+              }
+            }
+      }
+      if(`attributeExists "fbWriteString" $mat[0]`){
+        if($write)  setAttr -type "string" ($mat[0]+".fbWriteString") $fbWrite;
+        else setAttr -type "string" ($mat[0]+".fbWriteString") "";
+      }
+      if(`attributeExists "passesInOnce" $mat[0]`){
+        if($write)  setAttr ($mat[0]+".passesInOnce") 1;
+        else setAttr ($mat[0]+".passesInOnce") 0;
+      }
+    }
+  }
+}
+
+global proc ccgRenderLayer_disableShadowChain(int $enable)
+{
+  string $layershaders[] = `ls -fl -type ccg_base_mix20layers`;
+  int $num = size($layershaders);
+  int $i;
+  string $ccgType[] = ccgRenderLayer_nodeType();
+  string $subshader[];
+  
+  for($i=0;$i<$num;$i++){
+    //ccg_base_mix20layers
+    if($layershaders[$i]!=""){
+        int $n;
+        int $n_layers = `getAttr ($layershaders[$i]+".g_layers_number")`;
+        for($n=1;$n<=$n_layers;$n++){
+          $subshader = `listConnections -s 1 -d 0 -scn 1 ($layershaders[$i]+".shader_"+$n)`;
+          if($subshader[0]!="" && ccgRenderLayer_isCcgShaders($subshader[0],$ccgType)){
+            if(`attributeExists "disableShadowChain" $subshader[0]`){
+              if($enable) setAttr ($subshader[0]+".disableShadowChain") 1;
+              else setAttr ($subshader[0]+".disableShadowChain") 0;
+            }
+          }
+        }
+    }
+  }
+  
+  clear $layershaders;
+  $layershaders = `ls -fl -type ccg_base_twosided`;
+  $num = size($layershaders);
+  for($i=0;$i<$num;$i++){
+    //ccg_base_twosided
+    clear $subshader;
+    $subshader = `listConnections -s 1 -d 0 -scn 1 ($layershaders[$i]+".front_shader")`;
+    if($subshader[0]!="" && ccgRenderLayer_isCcgShaders($subshader[0],$ccgType)){
+      if(`attributeExists "disableShadowChain" $subshader[0]`){
+        if($enable) setAttr ($subshader[0]+".disableShadowChain") 1;
+        else setAttr ($subshader[0]+".disableShadowChain") 0;
+      }
+    }
+    clear $subshader;
+    $subshader = `listConnections -s 1 -d 0 -scn 1 ($layershaders[$i]+".back_shader")`;
+    if($subshader[0]!="" && ccgRenderLayer_isCcgShaders($subshader[0],$ccgType)){
+      if(`attributeExists "disableShadowChain" $subshader[0]`){
+        if($enable) setAttr ($subshader[0]+".disableShadowChain") 1;
+        else setAttr ($subshader[0]+".disableShadowChain") 0;
+      }
+    }
+  }
+  
+}
+
+global proc ccgRenderLayer_multiPassOutput(int $buttonState, int $method, string $path, string $passes[], string $cam, int $format, int $compression, int $imageType)
+{
+    int $i,$j,$k,$num,$size1,$size2;
+    string $fbWrite, $nodeTypes[],$tempArray[], $tempArray2[],$tmp, $camInstance[];
+    
+if(`objExists mentalrayGlobals`)
+{
+    if(!$buttonState)  //create framebuffer
+    {
+      if($method==1)  //output shader method
+      {
+        ccgRenderLayer_delete(1);  //delete geo shader firstly
+        
+        $num = size($passes);
+        clear $tempArray;
+        for($i=0,$fbWrite="",$j=0;$i<$num;$i++)
+        {
+          $tmp = "mrUserfb_"+strip($passes[$i]);
+          if(!startsWith($passes[$i]," "))
+          {
+            if(!`objExists $tmp`)
+            {
+                createNode mentalrayUserBuffer -name $tmp;
+                if($imageType==2)setAttr ($tmp+".dataType") 5;
+                else setAttr ($tmp+".dataType") 2;
+            }else {
+                    clear $tempArray2;
+                    $tempArray2 = `listConnections -s off -d on -p on -sh on -scn on ($tmp+".message")`;
+                    for($k=0;$k<size($tempArray2);$k++)
+                      disconnectAttr ($tmp+".message") $tempArray2[$k];
+                    if($imageType==2)setAttr ($tmp+".dataType") 5;
+                    else setAttr ($tmp+".dataType") 2;
+                  }
+            $fbWrite += $passes[$i] + "=" + $j + ";";
+            $tempArray[$j] = $tmp;
+            $j++;
+          }
+          else {
+                  if(`objExists $tmp`)
+                  {
+                    clear $tempArray2;
+                    $tempArray2 = `listConnections -s off -d on -p on -sh on -scn on ($tmp+".message")`;
+                    for($k=0;$k<size($tempArray2);$k++)
+                      disconnectAttr ($tmp+".message") $tempArray2[$k];
+                    delete $tmp;
+                  }
+               }
+        }
+        $fbWrite = `substring $fbWrite 1 (size($fbWrite)-1)`;
+        
+        for($i=0;$i<$j;$i++)
+          connectAttr -na -force ($tempArray[$i]+".message") miDefaultOptions.frameBufferList;
+
+        //camera
+        if(!`objExists "mrOutputExr"`)
+            createNode ccg_output_exr -name "mrOutputExr";
+        else {
+                setAttr mrOutputExr.format ($format-1);
+                setAttr mrOutputExr.compression ($compression-1);
+            }
+        clear $tempArray;
+        $tempArray = `listConnections -d on -s off -p on -sh on -scn on mrOutputExr.message`;
+        for($i=0;$i<size($tempArray);$i++)
+          disconnectAttr mrOutputExr.message $tempArray[$i];
+        $camInstance = `ls -fl -ca`;
+        for($i=0;$i<size($camInstance);$i++)
+        {
+          if($camInstance[$i] == $cam)
+          {
+            if(!`isConnected mrOutputExr.message ($camInstance[$i]+".miOutputShader")`)
+              connectAttr -force mrOutputExr.message ($camInstance[$i]+".miOutputShader");
+            setAttr ($camInstance[$i]+".miFbComputeColor") 1;
+            if($imageType==2)setAttr ($camInstance[$i]+".miFbBitsizeColor") 3;
+            else setAttr ($camInstance[$i]+".miFbBitsizeColor") 0;
+            setAttr ($camInstance[$i]+".miFbComputeAlpha") 1;
+            if($imageType==2)setAttr ($camInstance[$i]+".miFbBitsizeAlpha") 3;
+            else setAttr ($camInstance[$i]+".miFbBitsizeAlpha") 0;
+            setAttr ($camInstance[$i]+".renderable") 1;
+          }else {
+                  if(`isConnected mrOutputExr.message ($camInstance[$i]+".miOutputShader")`)
+                    disconnectAttr mrOutputExr.message ($camInstance[$i]+".miOutputShader");
+                  setAttr ($camInstance[$i]+".renderable") 0;
+                 }
+        }
+        
+        //shader
+        $nodeTypes = ccgRenderLayer_nodeType();
+        $size1 = size($nodeTypes);
+        clear $tempArray;
+        string $warningShaders[];
+        int $warn = 0;
+        for($i=0;$i<$size1;$i++)
+        {
+          $tempArray = `ls -fl -type $nodeTypes[$i]`;
+          $size2 = size($tempArray);
+          for($j=0;$j<$size2;$j++)
+          {
+            if(`ccgRenderLayer_isTerminateShader $tempArray[$j]`)
+            {
+              if(`attributeExists "fbWriteString" $tempArray[$j]`)
+                setAttr -type "string" ($tempArray[$j]+".fbWriteString") $fbWrite;
+              if(`attributeExists "filename" $tempArray[$j]`)
+                setAttr -type "string" ($tempArray[$j]+".filename") $path;
+              if(`attributeExists "passesInOnce" $tempArray[$j]`)
+                setAttr ($tempArray[$j]+".passesInOnce") 1;
+            }
+          }
+        }
+      }else {   // geo shader method
+              ccgRenderLayer_delete(0); //delete output shader firstly
+              
+              $num = size($passes);
+              for($i=0,$fbWrite="",$j=0;$i<$num;$i++)
+              {
+                if(!startsWith($passes[$i]," "))
+                {
+                  $fbWrite += $passes[$i] + "=" + $j + ";";
+                  $j++;
+                }
+              }
+              $fbWrite = `substring $fbWrite 1 (size($fbWrite)-1)`;
+              
+              if(!`objExists "ccgGeoShaderCube"`)
+                polyCube -ch 0 -name ccgGeoShaderCube;
+              if(!`objExists "ccgGeoShaderFramebuffers"`){
+                createNode ccg_geo_framebuffer -name "ccgGeoShaderFramebuffers";
+        button -e -en 0 ccgRL_mpo_enable;
+        button -e -en 1 ccgRL_mpo_disable;
+        if(`attributeExists "enable" ccgGeoShaderFramebuffers`)
+          setAttr ccgGeoShaderFramebuffers.enable 1; 
+        }
+              
+              setAttr ccgGeoShaderCube.scale 0 0 0;
+              setAttr "ccgGeoShaderCubeShape.castsShadows" 0;
+              setAttr "ccgGeoShaderCubeShape.receiveShadows" 0;
+              setAttr "ccgGeoShaderCubeShape.motionBlur" 0;
+              setAttr "ccgGeoShaderCubeShape.primaryVisibility" 0;
+              setAttr "ccgGeoShaderCubeShape.smoothShading" 0;
+              setAttr "ccgGeoShaderCubeShape.visibleInReflections" 0;
+              setAttr "ccgGeoShaderCubeShape.visibleInRefractions" 0;
+              setAttr "ccgGeoShaderCubeShape.doubleSided" 0;
+              setAttr ccgGeoShaderCube.miExportGeoShader 1;
+              if(!`isConnected ccgGeoShaderFramebuffers.message ccgGeoShaderCube.miGeoShader`)
+                connectAttr -force ccgGeoShaderFramebuffers.message ccgGeoShaderCube.miGeoShader;
+              if(`attributeExists "format" ccgGeoShaderFramebuffers`)
+                setAttr ccgGeoShaderFramebuffers.format ($format-1);  
+              if(`attributeExists "compression" ccgGeoShaderFramebuffers`)
+                setAttr ccgGeoShaderFramebuffers.compression ($compression-1); 
+        //set framebuffers type and filter
+        if(`attributeExists "type_fb_1" ccgGeoShaderFramebuffers`)
+        ccgRenderLayer_multiPassOutput_setFramebufferType($passes);
+              if(`attributeExists "filename" ccgGeoShaderFramebuffers`)
+                setAttr -type "string" ccgGeoShaderFramebuffers.filename $path;
+              if(`attributeExists "fbWriteString" ccgGeoShaderFramebuffers`)
+                setAttr -type "string" ccgGeoShaderFramebuffers.fbWriteString $fbWrite;
+              if(`attributeExists "Enable_Multi_channel_OpenExr" ccgGeoShaderFramebuffers`)
+                setAttr "ccgGeoShaderFramebuffers.Enable_Multi_channel_OpenExr" `checkBoxGrp -q -v1 ccgRL_mpo_mutiexr`;
+        if(`attributeExists "enableSubFolder" ccgGeoShaderFramebuffers`)
+        setAttr "ccgGeoShaderFramebuffers.enableSubFolder" `checkBoxGrp -q -v1 ccgRL_mpo_subfolder`;
+              if(`attributeExists "padding" ccgGeoShaderFramebuffers`)
+                setAttr "ccgGeoShaderFramebuffers.padding" `intSliderGrp -q -v ccgRL_mpo_pad`;
+        
+        //set script node
+        if(!`objExists ccgGeoFramebufferScriptNode`) ccgRenderLayer_multiPassOutputScriptJob(1);
+              
+        //set material shader's attributes
+        int $enableframebuffer = 0;
+        if(`attributeExists "enable" ccgGeoShaderFramebuffers`)
+          $enableframebuffer = `getAttr ccgGeoShaderFramebuffers.enable`;
+        if($enableframebuffer){
+          if(`objExists ccgGeoShaderCube`) setAttr ccgGeoShaderCube.v 1;
+          ccgRenderLayer_multiPassOutput_setRenderLayerControls(1);
+//          $nodeTypes = ccgRenderLayer_nodeType();
+//          $size1 = size($nodeTypes);
+//          clear $tempArray;
+//          for($i=0;$i<$size1;$i++)
+//          {
+//            $tempArray = `ls -fl -type $nodeTypes[$i]`;
+//            $size2 = size($tempArray);
+//            for($j=0;$j<$size2;$j++)
+//            {
+//              if(`ccgRenderLayer_isTerminateShader $tempArray[$j]`)
+//              {
+//              if(`attributeExists "fbWriteString" $tempArray[$j]`)
+//                setAttr -type "string" ($tempArray[$j]+".fbWriteString") $fbWrite;
+//              //if(`attributeExists "filename" $tempArray[$j]`)
+//              //  setAttr -type "string" ($tempArray[$j]+".filename") $path;
+//              if(`attributeExists "passesInOnce" $tempArray[$j]`)
+//                setAttr ($tempArray[$j]+".passesInOnce") 1;
+//              }
+//            }
+//          }
+        }
+        
+            }
+            
+      //render global
+      if(`objExists miDefaultFramebuffer`)
+      {
+        if($imageType==2)setAttr miDefaultFramebuffer.datatype 5;
+        else setAttr miDefaultFramebuffer.datatype 2;
+      }
+      if(`objExists mentalrayGlobals`)
+      {
+        setAttr "mentalrayGlobals.passAlphaThrough" 1;
+        setAttr "mentalrayGlobals.passDepthThrough" 1;
+        setAttr "mentalrayGlobals.passLabelThrough" 1;
+        setAttr "mentalrayGlobals.exportPostEffects" 0;
+      }
+    }else { // delete framebuffer
+            ccgRenderLayer_delete(0);
+            ccgRenderLayer_delete(1);
+          }
+} else warning "startup or select mental ray render first.";
+}
+
+global proc ccgRenderLayer_multiPassOutput_enable()
+{
+  int $i,$j,$k,$num,$size1,$size2;
+    string $fbWrite, $nodeTypes[],$tempArray[];
+  
+  if(`objExists ccgGeoShaderCube`) setAttr ccgGeoShaderCube.v 1;
+  
+  if(`objExists ccgGeoShaderFramebuffers`)
+  {
+    if(`attributeExists "enable" ccgGeoShaderFramebuffers`)
+      setAttr ccgGeoShaderFramebuffers.enable 1;
+      
+    button -e -en 0 ccgRL_mpo_enable;
+    button -e -en 1 ccgRL_mpo_disable;
+    
+    if(`attributeExists "fbWriteString" ccgGeoShaderFramebuffers`)
+      $fbWrite = `getAttr ccgGeoShaderFramebuffers.fbWriteString`;
+    else $fbWrite = "";
+    
+    ccgRenderLayer_multiPassOutput_setRenderLayerControls(1);
+  }
+}
+
+global proc ccgRenderLayer_multiPassOutput_disable()
+{
+  int $i,$j,$k,$num,$size1,$size2;
+    string $nodeTypes[],$tempArray[];
+    
+  if(`objExists ccgGeoShaderCube`) setAttr ccgGeoShaderCube.v 0;
+  
+  if(`objExists ccgGeoShaderFramebuffers`)
+  {
+    if(`attributeExists "enable" ccgGeoShaderFramebuffers`)
+      setAttr ccgGeoShaderFramebuffers.enable 0;
+      
+    button -e -en 1 ccgRL_mpo_enable;
+    button -e -en 0 ccgRL_mpo_disable;
+    
+    ccgRenderLayer_multiPassOutput_setRenderLayerControls(0);
+  }
+}
+
+global proc string ccgRenderLayer_nameConvert(string $name)
+{
+  switch ($name)
+  {
+    case "Combined":            return "LAYER_combined";
+    case "Color":               return "LAYER_col";
+    case "Diffuse":             return "LAYER_diff";
+    case "Ambient":             return "LAYER_ambi";
+    case "Specular":            return "LAYER_spec";
+    case "Incandescence":       return "LAYER_incan";
+    case "Reflection":          return "LAYER_refl";
+    case "Refraction":          return "LAYER_refr";
+    case "Z":                   return "LAYER_z";
+    case "Normal":              return "LAYER_nor";
+    case "Occlusion":           return "LAYER_ao";
+    case "Shadow":              return "LAYER_shad";
+    case "Vector":              return "LAYER_vec";
+    case "UV":                  return "LAYER_uv";
+    case "Object Id":           return "LAYER_oid";
+    case "Material Id":         return "LAYER_mid";
+    case "Reflect Occlusion":   return "LAYER_reflao";
+    case "Refract Occlusion":   return "LAYER_refrao";
+    case "Global Illumination": return "LAYER_globillum";
+    case "Translucent":         return "LAYER_translucent";
+    case "SSS Front":           return "LAYER_sssfront";
+    case "SSS Middle":          return "LAYER_sssmiddle";
+    case "SSS Back":            return "LAYER_sssback";
+    default:                    return "LAYER_combined";
+  }
+}
+
+global proc ccgRenderLayer_objSampleLevel(int $button, int $min, int $max)
+{
+  string $obj[];
+  int $objSize,$i;
+  
+  $obj = `ls -fl -type mesh -type nurbsSurface -type subdiv -type fluidShape -type particle -type hairSystem`;
+  $objSize = size($obj);
+  
+  for($i=0;$i<$objSize;$i++)
+  {
+    if(`attributeExists "miOverrideSamples" $obj[$i]`)
+    {
+        setAttr ($obj[$i]+".miOverrideSamples") $button;
+        setAttr ($obj[$i]+".miMinSamples") $min;
+        setAttr ($obj[$i]+".miMaxSamples") $max;
+    }
+  }
+}
+
+global proc ccgRenderLayer_findObjNoncustomShader(int $hide)
+{
+  string $engines[] = `ls -type "shadingEngine"`;
+  string $nonCcgEngines[];
+  string $sources[];
+  int $numEngines = size($engines);
+  int $i,$j;
+  int $nonCcg;
+  
+  //find non ccg* shadingEngines
+  for($i=0,$j=0;$i<$numEngines;$i++)
+  {
+    $nonCcg=0;
+    clear $sources;
+    $sources = `listConnections -s 1 -d 0 ($engines[$i]+".miMaterialShader")`;
+    int $numSources = size($sources);
+    if($numSources!=0)
+    {
+      string $type = `nodeType $sources[0]`;
+      if(!`gmatch $type "ccg*"`) $nonCcg = 1;
+    }else {
+            $sources = `listConnections -s 1 -d 0 ($engines[$i]+".surfaceShader")`;
+            $numSources = size($sources);
+            if($numSources!=0)
+            {
+              string $type = `nodeType $sources[0]`;
+              if(!`gmatch $type "ccg*"`) $nonCcg = 1;
+            }
+          }
+     
+     if($nonCcg)
+     {
+        $nonCcgEngines[$j] = $engines[$i];
+        $j++;   
+     }
+  }
+  
+  //find objects connected to non ccg* shadingEngines
+  $numEngines = size($nonCcgEngines);
+  string $objects[];
+  int $k;
+  for($i=0,$j=0;$i<$numEngines;$i++)
+  {
+    clear $sources;
+    $sources = stringArrayRemoveDuplicates(`listConnections -s 1 -d 0 ($nonCcgEngines[$i]+".dagSetMembers")`);
+    int $sizeSources = size($sources);
+    for($k=0;$k<$sizeSources;$k++)
+      $objects[$k+$j] = $sources[$k];
+    $j+=$sizeSources; 
+  }
+  $objects = stringArrayRemoveDuplicates($objects);
+  
+  //excludes hidden objects
+  if($hide)
+  {
+    string $itemsToRemove[];
+    int $num = size($objects);
+    for($i=0,$j=0;$i<$num;$i++)
+    {
+      if(`attributeExists "visibility" $objects[$i]`)
+      {
+        if(!`getAttr ($objects[$i]+".visibility")`)
+        {
+          $itemsToRemove[$j] = $objects[$i];
+          $j++;
+        }
+      }
+    }
+    $objects = stringArrayRemoveExact($itemsToRemove, $objects);
+  }
+  
+  //excludes ccgGeoShaderCube
+  $objects = stringArrayRemove({"ccgGeoShaderCube"}, $objects);
+  
+  //select and print these objects
+  print $objects;
+  select $objects;
+}
+
+global proc ccgRenderLayer()
+{
+  if(`windowPref -exists ccgRL_windows`) windowPref -e -w 554 -h 650 ccgRL_windows;
+  if(`window -exists ccgRL_windows`) deleteUI ccgRL_windows;
+  window -t "CrystalCG Render Layers" -w 554 -h 650 -in "ccg rende layer" -rtf true -s true ccgRL_windows;
+  formLayout -nd 100 ccgRL_top_formlayout;
+  scrollLayout -cr true ccgRL_scrollLayout;
+  columnLayout -adjustableColumn true ccgRL_top_columnlayout;
+  frameLayout -l "Render Pass Setting" -cll 1 -cl 1 -bs "etchedIn" ccgRL_framelayer1;
+  formLayout -nd 100 ccgRL_formlayout1;
+  optionMenuGrp -l "Layers" -cat 1 "right" 10 -annotation "Select layer for rendering" ccgRL_option1;
+    menuItem -l "Combined"      ccgRL_menu_1;
+    menuItem -l "Color"         ccgRL_menu_2;
+    menuItem -l "Diffuse"       ccgRL_menu_3;
+    menuItem -l "Ambient"       ccgRL_menu_4;
+    menuItem -l "Specular"      ccgRL_menu_5;
+    menuItem -l "Incandescence" ccgRL_menu_6;
+    menuItem -l "Reflection"    ccgRL_menu_7;
+    menuItem -l "Refraction"    ccgRL_menu_8;
+    menuItem -l "Z"             ccgRL_menu_9;
+    menuItem -l "Normal"        ccgRL_menu_10;
+    menuItem -l "Occlusion"     ccgRL_menu_11;
+    menuItem -l "Reflect Occlusion" ccgRL_menu_12;
+    menuItem -l "Global Illumination" ccgRL_menu_13;
+    menuItem -l "SSS Front"     ccgRL_menu_14;
+    menuItem -l "SSS Middle"    ccgRL_menu_15;
+    menuItem -l "SSS Back"      ccgRL_menu_16;
+  checkBoxGrp -ncb 1 -l1 "Enable Set Layers" -v1 1 ccgRL_check1;
+  separator ccgRL_separator1;
+  floatFieldGrp -l "Depth Min" -nf 1 -v1 0 -en 0 ccgRL_float1;
+  floatFieldGrp -l "Depth Max" -nf 1 -v1 20 -en 0 ccgRL_float2;
+  checkBoxGrp -ncb 1 -l1 "Enable Set Depth" -v1 0 ccgRL_check2;
+  separator -vis 1 ccgRL_separator2;
+  checkBoxGrp -ncb 1 -l1 "Set diffuse pass opaque" -v1 0 -cw 1 140 ccgRL_checkRPS1;
+  separator -vis 1 ccgRL_separatorIBL;
+  optionMenuGrp -l "IBL Mode" -cat 1 "right" 10 -en 1 ccgRL_optionIBL1;
+    menuItem -l "Disabled" ccgRL_menu_ibl0;
+    menuItem -l "Environment" ccgRL_menu_ibl1;
+    menuItem -l "Light Array" ccgRL_menu_ibl2;
+    menuItem -l "Diffuse" ccgRL_menu_ibl3;
+  button -l "Set Bent Normal" -en 1 ccgRL_buttonIBL1;
+  button -l "Select Bent Node" -en 1 ccgRL_buttonIBL2;
+  button -l "Delete Bent Node" -en 1 ccgRL_buttonIBL3;
+  optionMenuGrp -l "Bent Space" -cat 1 "right" 10 -en 1 ccgRL_optionIBL2;
+    menuItem -l "World" ccgRL_menu_ibl3;
+    menuItem -l "Camera" ccgRL_menu_ibl4;
+    menuItem -l "Object" ccgRL_menu_ibl5;
+    menuItem -l "No Change" ccgRL_menu_ibl6;
+  checkBoxGrp -ncb 1 -l1 "Add occlusion to combined layer" -cw 1 180 ccgRL_checkIBL_add1;
+  frameLayout -l "Diffuse IBL Parameters" -lv 0 -cl 1 -cll 1 -bs "etchedOut" ccgRL_framelayer_inner1;
+  formLayout -nd 100 ccgRL_formlayout_inner1;
+  optionMenuGrp -l "Shadow Mode" -cat 1 "right" 10 -en 1 ccgRL_optionIBL3;
+    menuItem -l "Occlusion" ccgRL_menu_ibl7;
+    menuItem -l "Object Block" ccgRL_menu_ibl8;
+    menuItem -l "No Shadow" ccgRL_menu_ibl9;
+  floatFieldGrp -l "Min Value" -nf 1 -v1 0 -en 1 ccgRL_float_ibl1;
+  floatFieldGrp -l "Max Value" -nf 1 -v1 1 -en 1 ccgRL_float_ibl2;
+  colorSliderGrp -l "Bright" -rgb 1 1 1 -en 1 ccgRL_color_ibl1;
+  colorSliderGrp -l "Dark" -rgb 0 0 0 -en 1 ccgRL_color_ibl2;
+  checkBoxGrp -ncb 2 -l1 "Emit Diffuse" -l2 "Emit Specular" -v1 1 -v2 0 -en 1 ccgRL_checkIBL1;
+  setParent ccgRL_formlayout1;
+  floatSliderGrp -l "Lighting Sample Angle" -f true -v 180 -min 0 -max 180 -en 1 ccgRL_floatslider_ibl1;
+  separator -vis 1 ccgRL_separatorRPS1;
+  button ccgRL_button1;
+  button ccgRL_button2;
+  setParent ccgRL_top_columnlayout;
+  
+  frameLayout -l "Shadow Trace Functions" -cll 1 -cl 1 -bs "etchedIn" ccgRL_framelayer2;
+  formLayout -nd 100 ccgRL_formlayout2;
+  button -l "Disable Shadow Chain" ccgRL_button_DSCUC;
+  button -l "Enable Shadow Chain" ccgRL_button_ESCUC;
+  setParent ccgRL_top_columnlayout;
+  
+  frameLayout -l "Multi-passes Output" -cll 1 -cl 1 -bs "etchedIn" ccgRL_framelayer3;
+  formLayout -nd 100 ccgRL_formlayout3;
+  button -l "Enable" -en 0 ccgRL_mpo_enable;
+  button -l "Disable" -en 0 ccgRL_mpo_disable;
+  radioButtonGrp -vis 0 -nrb 2 -l "Method" -la2 "geometry shader" "output shader" -sl 1 -en false ccgRL_radiobuttongrp1;
+  optionMenuGrp -en false -l "Camera" -cat 1 "right" 10 -cw 1 60 -adj 2 -annotation "Select camera for output" ccgRL_option2;
+    string $cams[] = `ls -fl -ca`;
+    int $i;
+    for($i = 0;$i<size($cams);$i++)
+      menuItem -l $cams[$i] ("ccgRL_option2_menu_"+($i+1));
+  optionMenuGrp -l "Format" -cat 1 "right" 10 -cw 1 50 -cw 2 80 -adj 2 -annotation "Select output file format" ccgRL_option3;
+      menuItem -l "exr" ccgRL_option3_menu_1;
+      menuItem -l "rla" ccgRL_option3_menu_2;
+      menuItem -l "tiff_compressed" ccgRL_option3_menu_3;
+      menuItem -l "tiff"  ccgRL_option3_menu_4;
+      menuItem -l "targa" ccgRL_option3_menu_5;
+      menuItem -l "iff" ccgRL_option3_menu_6;
+  optionMenuGrp -l "Compression" -cat 1 "right" 10 -cw 1 80 -cw 2 60 -adj 2 -annotation "Select compression type for exr file" ccgRL_option4;
+      menuItem -l "default" ccgRL_option4_menu_1;
+      menuItem -l "none" ccgRL_option4_menu_2;
+      menuItem -l "piz" ccgRL_option4_menu_3;
+      menuItem -l "zip" ccgRL_option4_menu_4;
+      menuItem -l "rle" ccgRL_option4_menu_5;
+      menuItem -l "pxr24" ccgRL_option4_menu_6;
+  optionMenuGrp -l "Image Type" -cat 1 "right" 10 -cw 1 80 -cw 2 80 -adj 2 -annotation "Select image type for output file" ccgRL_option5;
+      menuItem -l "RGBA(Byte) 4x8 Bit" ccgRL_option5_menu_1;
+      menuItem -l "RGBA(Float) 4x32 Bit"  ccgRL_option5_menu_2;
+  intSliderGrp -l "Frame Padding" -v 3 -min 1 -max 5 -f true ccgRL_mpo_pad;
+  checkBoxGrp -ncb 1 -v1 1 -l1 "Multi Channel OpenEXR" -adj 1 ccgRL_mpo_mutiexr;
+  checkBoxGrp -ncb 1 -v1 1 -l1 "Create Sub Folder" -adj 1 ccgRL_mpo_subfolder;
+  textFieldGrp -l "File Path and Name" -ad2 2 -cw 1 110 ccgRL_textfieldgrp1;
+  checkBoxGrp -ncb 4 -v1 1 -en1 false -l1 "Combined" -l2 "Color" -l3 "Diffuse" -l4 "Ambient" ccgRL_checkboxgrp1;
+  checkBoxGrp -ncb 4 -l1 "Specular" -l2 "Incandescence" -l3 "Reflection" -l4 "Refraction" ccgRL_checkboxgrp2;
+  checkBoxGrp -ncb 4 -l1 "Normal" -l2 "Occlusion" -l3 "Reflect Occlusion" -l4 "Shadow" ccgRL_checkboxgrp3;
+  checkBoxGrp -ncb 4 -l1 "Z" -l2 "Global Illumination" -l3 "SSS Front" -l4 "SSS Middle" ccgRL_checkboxgrp4;
+  checkBoxGrp -ncb 1 -l1 "SSS Back" ccgRL_checkboxgrp5;
+  separator -vis 0 ccgRL_separator4;
+  button -l "Create and Modify" ccgRL_button_passcreate;
+  button -l "Select Framebuffer" ccgRL_button_framebuffer;
+  button -l "Delete" ccgRL_button_passdelete;
+  button -l "Select mentalrayGlobals" ccgRL_button_selectMRG;
+  setParent ccgRL_top_columnlayout;
+  
+  frameLayout -l "Find out objects assigned non-Ccg shaders" -cll 1 -cl 1 -bs "etchedIn" ccgRL_framelayer4;
+  formLayout -nd 100 ccgRL_formlayout4;
+  checkBoxGrp -ncb 1 -l "Excluded hidden objects" -v1 1 ccgRL_check_insert1;
+  button -l "Find" ccgRL_button_find;
+  setParent ccgRL_top_columnlayout;
+  
+  frameLayout -l "Objects Sample Level" -cll 1 -cl 1 -bs "etchedIn" ccgRL_framelayer5;
+  formLayout -nd 100 ccgRL_formlayout5;
+  intFieldGrp -nf 2 -l "Min Sample Level" -v1 2 -v2 2 -el "Max Sample Level" -adj 4 ccgRL_intfieldgrp1;
+  button -l "Enable" ccgRL_sample_button1;
+  button -l "Disable" ccgRL_sample_button2;
+  setParent ccgRL_top_formlayout;
+  button -l "Close" -c "deleteUI ccgRL_windows" ccgRL_button_close;
+  
+  formLayout -edit
+    -attachForm ccgRL_scrollLayout "top" 0
+    -attachForm ccgRL_scrollLayout "left" 0
+    -attachForm ccgRL_scrollLayout "right" 0
+    -attachPosition ccgRL_scrollLayout "bottom" 30 100
+    -attachControl ccgRL_button_close "top" 5 ccgRL_scrollLayout
+    -attachForm ccgRL_button_close "left" 0
+    -attachForm ccgRL_button_close "right" 0
+  ccgRL_top_formlayout;
+
+  formLayout -edit
+    -attachForm     ccgRL_option1 "top" 5
+    -attachForm     ccgRL_option1 "left" 0
+    -attachForm     ccgRL_option1 "right" 0
+    -attachControl  ccgRL_check1 "top" 5 ccgRL_option1
+    -attachPosition ccgRL_check1 "left" 0 32
+    -attachForm     ccgRL_check1 "right" 0
+
+    -attachControl  ccgRL_separator1     "top" 5 ccgRL_check1
+    -attachForm     ccgRL_separator1     "left"   0
+    -attachForm     ccgRL_separator1     "right"  0
+
+    -attachControl  ccgRL_float1     "top" 5 ccgRL_separator1
+    -attachForm     ccgRL_float1     "left"   0
+    -attachForm     ccgRL_float1     "right"  0
+    -attachControl  ccgRL_float2     "top" 5 ccgRL_float1
+    -attachForm     ccgRL_float2     "left"   0
+    -attachForm     ccgRL_float2     "right"  0    
+    -attachControl  ccgRL_check2 "top" 5 ccgRL_float2
+    -attachPosition ccgRL_check2 "left" 0 32
+    -attachForm     ccgRL_check2 "right" 0
+
+    -attachControl  ccgRL_separator2     "top" 0 ccgRL_check2
+    -attachForm     ccgRL_separator2     "left"   0
+    -attachForm     ccgRL_separator2     "right"  0
+    
+    -attachControl  ccgRL_checkRPS1   "top" 5 ccgRL_separator2
+    -attachPosition ccgRL_checkRPS1   "left" 0 32
+    -attachForm     ccgRL_checkRPS1   "right" 0
+  
+    -attachControl  ccgRL_separatorIBL "top" 5 ccgRL_checkRPS1
+    -attachForm     ccgRL_separatorIBL "left" 0
+    -attachForm     ccgRL_separatorIBL "right" 0
+    
+    -attachControl  ccgRL_optionIBL1 "top" 5 ccgRL_separatorIBL
+    -attachForm     ccgRL_optionIBL1 "left" 0
+    -attachForm     ccgRL_optionIBL1 "right" 0
+    -attachControl  ccgRL_buttonIBL1 "top" 5 ccgRL_optionIBL1
+    -attachPosition ccgRL_buttonIBL1 "left" 0 15
+    -attachPosition ccgRL_buttonIBL1 "right" 0 38
+    -attachControl  ccgRL_buttonIBL2 "top" 5 ccgRL_optionIBL1
+    -attachPosition ccgRL_buttonIBL2 "left" 0 38
+    -attachPosition ccgRL_buttonIBL2 "right" 0 62
+    -attachControl  ccgRL_buttonIBL3 "top" 5 ccgRL_optionIBL1
+    -attachPosition ccgRL_buttonIBL3 "left" 0 62
+    -attachPosition ccgRL_buttonIBL3 "right" 0 85
+    -attachControl  ccgRL_optionIBL2 "top" 5 ccgRL_buttonIBL1
+    -attachForm     ccgRL_optionIBL2 "left" 0
+    -attachForm     ccgRL_optionIBL2 "right" 0
+    -attachControl  ccgRL_checkIBL_add1 "top" 5 ccgRL_optionIBL2
+    -attachPosition ccgRL_checkIBL_add1 "left" 0 32
+    -attachForm     ccgRL_checkIBL_add1 "right" 0
+    -attachControl  ccgRL_framelayer_inner1 "top" 5 ccgRL_checkIBL_add1
+    -attachForm     ccgRL_framelayer_inner1 "left" 0
+    -attachForm     ccgRL_framelayer_inner1 "right" 0
+    -attachControl  ccgRL_floatslider_ibl1 "top" 5 ccgRL_framelayer_inner1
+    -attachForm     ccgRL_floatslider_ibl1 "left" 0
+    -attachForm     ccgRL_floatslider_ibl1 "right" 0
+    
+    -attachControl  ccgRL_separatorRPS1 "top" 5 ccgRL_floatslider_ibl1
+    -attachForm     ccgRL_separatorRPS1 "left" 0
+    -attachForm     ccgRL_separatorRPS1 "right" 0 
+
+    -attachControl  ccgRL_button1 "top"   5 ccgRL_separatorRPS1
+    -attachForm     ccgRL_button1 "left"  0
+    -attachPosition ccgRL_button1 "right" 0 50
+    -attachControl  ccgRL_button2 "top"   5 ccgRL_separatorRPS1
+    -attachControl  ccgRL_button2 "left"  0 ccgRL_button1
+    -attachPosition ccgRL_button2 "right" 0 100
+  ccgRL_formlayout1;
+  
+  formLayout -edit
+    -attachForm     ccgRL_optionIBL3 "top" 5 
+    -attachForm     ccgRL_optionIBL3 "left" 0
+    -attachForm     ccgRL_optionIBL3 "right" 0
+    -attachControl  ccgRL_float_ibl1 "top" 5 ccgRL_optionIBL3
+    -attachForm     ccgRL_float_ibl1 "left" 0
+    -attachForm     ccgRL_float_ibl1 "right" 0
+    -attachControl  ccgRL_float_ibl2 "top" 5 ccgRL_float_ibl1
+    -attachForm     ccgRL_float_ibl2 "left" 0
+    -attachForm     ccgRL_float_ibl2 "right" 0
+    -attachControl  ccgRL_color_ibl1 "top" 5 ccgRL_float_ibl2
+    -attachForm     ccgRL_color_ibl1 "left" 0
+    -attachForm     ccgRL_color_ibl1 "right" 0
+    -attachControl  ccgRL_color_ibl2 "top" 5 ccgRL_color_ibl1
+    -attachForm     ccgRL_color_ibl2 "left" 0
+    -attachForm     ccgRL_color_ibl2 "right" 0
+    -attachControl  ccgRL_checkIBL1 "top" 5 ccgRL_color_ibl2
+    -attachPosition ccgRL_checkIBL1 "left" 0 32
+    -attachForm     ccgRL_checkIBL1 "right" 0
+  ccgRL_formlayout_inner1;
+  
+  formLayout -edit
+    -attachForm     ccgRL_button_DSCUC "top" 5
+    -attachForm     ccgRL_button_DSCUC "left" 0
+    -attachForm     ccgRL_button_DSCUC "right" 0
+    -attachControl  ccgRL_button_ESCUC "top" 5 ccgRL_button_DSCUC
+    -attachForm     ccgRL_button_ESCUC "left" 0
+    -attachForm     ccgRL_button_ESCUC "right" 0
+  ccgRL_formlayout2;
+  
+  formLayout -edit
+  -attachForm     ccgRL_mpo_enable "top" 5
+    -attachForm     ccgRL_mpo_enable "left" 0
+    -attachPosition ccgRL_mpo_enable "right" 0 50
+  -attachForm     ccgRL_mpo_disable "top" 5
+    -attachPosition ccgRL_mpo_disable "left" 0 50
+    -attachForm   ccgRL_mpo_disable "right" 0
+    -attachControl  ccgRL_radiobuttongrp1 "top" 5 ccgRL_mpo_enable
+    -attachForm     ccgRL_radiobuttongrp1 "left" 0
+    -attachForm     ccgRL_radiobuttongrp1 "right" 0
+    -attachControl  ccgRL_option2 "top" 5 ccgRL_radiobuttongrp1
+    -attachForm     ccgRL_option2 "left" 0
+    -attachControl  ccgRL_option3 "top" 5 ccgRL_radiobuttongrp1
+    -attachControl  ccgRL_option3 "left" 0 ccgRL_option2
+    -attachForm     ccgRL_option3 "right" 5
+    -attachControl  ccgRL_option4 "top" 5 ccgRL_option2
+    -attachForm     ccgRL_option4 "left" 0
+    -attachControl  ccgRL_option5 "top" 5 ccgRL_option2
+    -attachControl  ccgRL_option5 "left" 0 ccgRL_option4
+    -attachForm     ccgRL_option5 "right" 5
+    -attachControl  ccgRL_mpo_pad "top" 5 ccgRL_option5
+    -attachForm     ccgRL_mpo_pad "left" 0
+    -attachForm     ccgRL_mpo_pad "right" 0
+    -attachControl  ccgRL_mpo_mutiexr "top" 5 ccgRL_mpo_pad
+    -attachForm     ccgRL_mpo_mutiexr "left" 0
+    -attachForm     ccgRL_mpo_mutiexr "right" 0
+  -attachControl  ccgRL_mpo_subfolder "top" 5 ccgRL_mpo_mutiexr
+    -attachForm     ccgRL_mpo_subfolder "left" 0
+    -attachForm     ccgRL_mpo_subfolder "right" 0
+    -attachControl  ccgRL_textfieldgrp1 "top" 5 ccgRL_mpo_subfolder
+    -attachForm     ccgRL_textfieldgrp1 "left" 5
+    -attachForm     ccgRL_textfieldgrp1 "right" 5
+    -attachControl  ccgRL_checkboxgrp1  "top" 5 ccgRL_textfieldgrp1
+    -attachForm     ccgRL_checkboxgrp1  "left" 0
+    -attachForm     ccgRL_checkboxgrp1  "right" 0
+    -attachControl  ccgRL_checkboxgrp2  "top" 5 ccgRL_checkboxgrp1
+    -attachForm     ccgRL_checkboxgrp2  "left" 0
+    -attachForm     ccgRL_checkboxgrp2  "right" 0
+    -attachControl  ccgRL_checkboxgrp3  "top" 5 ccgRL_checkboxgrp2
+    -attachForm     ccgRL_checkboxgrp3  "left" 0
+    -attachForm     ccgRL_checkboxgrp3  "right" 0
+    -attachControl  ccgRL_checkboxgrp4  "top" 5 ccgRL_checkboxgrp3
+    -attachForm     ccgRL_checkboxgrp4  "left" 0
+    -attachForm     ccgRL_checkboxgrp4  "right" 0
+    -attachControl  ccgRL_checkboxgrp5  "top" 5 ccgRL_checkboxgrp4
+    -attachForm     ccgRL_checkboxgrp5  "left" 0
+    -attachForm     ccgRL_checkboxgrp5  "right" 0
+
+    -attachControl  ccgRL_separator4  "top" 0 ccgRL_checkboxgrp5
+    -attachForm     ccgRL_separator4  "left" 0
+    -attachForm     ccgRL_separator4  "right" 0
+
+    -attachControl  ccgRL_button_passcreate "top" 5 ccgRL_separator4
+    -attachForm     ccgRL_button_passcreate "left" 0
+    -attachPosition ccgRL_button_passcreate "right" 0 25
+    -attachControl  ccgRL_button_framebuffer "top"   5 ccgRL_separator4
+    -attachPosition  ccgRL_button_framebuffer "left" 0 25
+    -attachPosition ccgRL_button_framebuffer "right" 0 50
+    -attachControl  ccgRL_button_passdelete "top"   5 ccgRL_separator4
+    -attachPosition  ccgRL_button_passdelete "left"  0 50
+    -attachPosition ccgRL_button_passdelete "right" 0 75
+    -attachControl  ccgRL_button_selectMRG "top"   5 ccgRL_separator4
+    -attachPosition  ccgRL_button_selectMRG "left"  0 75
+    -attachPosition ccgRL_button_selectMRG "right" 0 100
+  ccgRL_formlayout3;
+  
+  formLayout -edit
+    -attachForm     ccgRL_check_insert1 "top" 5
+    -attachForm     ccgRL_check_insert1 "left" 0
+    -attachForm     ccgRL_check_insert1 "right" 0
+    -attachControl  ccgRL_button_find "top" 5 ccgRL_check_insert1
+    -attachForm     ccgRL_button_find "left" 0
+    -attachForm     ccgRL_button_find "right" 0
+  ccgRL_formlayout4;
+  
+  formLayout -edit
+    -attachForm     ccgRL_intfieldgrp1 "top" 5
+    -attachForm     ccgRL_intfieldgrp1 "left" 0
+    -attachForm     ccgRL_intfieldgrp1 "right" 0
+    -attachControl  ccgRL_sample_button1 "top" 5 ccgRL_intfieldgrp1
+    -attachForm     ccgRL_sample_button1 "left" 0
+    -attachPosition ccgRL_sample_button1 "right" 0 50
+    -attachControl  ccgRL_sample_button2 "top" 5 ccgRL_intfieldgrp1
+    -attachControl  ccgRL_sample_button2 "left" 0 ccgRL_sample_button1
+    -attachForm     ccgRL_sample_button2 "right" 0
+  ccgRL_formlayout5;
+   
+  checkBoxGrp -e -onc "optionMenuGrp -e -en 1 ccgRL_option1" -ofc "optionMenuGrp -e -en 0 ccgRL_option1" ccgRL_check1;
+  checkBoxGrp -e -onc "floatFieldGrp -e -en 1 ccgRL_float1;floatFieldGrp -e -en 1 ccgRL_float2;" -ofc "floatFieldGrp -e -en 0 ccgRL_float1;floatFieldGrp -e -en 0 ccgRL_float2;" ccgRL_check2;
+  string $cbIBLoff = "button -e -en 0 ccgRL_buttonIBL1;"+
+                    "button -e -en 0 ccgRL_buttonIBL2;"+
+                    "button -e -en 0 ccgRL_buttonIBL3;"+
+                    "optionMenuGrp -e -en 0 ccgRL_optionIBL2;"+
+                    "checkBoxGrp -e -en 0 ccgRL_checkIBL_add1;"+
+                    "frameLayout -e -cl 1 ccgRL_framelayer_inner1;"+
+                    "floatSliderGrp -e -en 0 ccgRL_floatslider_ibl1;";
+  string $optionIBLCmd = "int $optIBL = `optionMenuGrp -q -sl ccgRL_optionIBL1`;"+
+                          "switch($optIBL){"+
+                            "case 1: "+$cbIBLoff+"break;"+
+                            "case 2: "+$cbIBLoff+
+                                      "button -e -en 1 ccgRL_buttonIBL1;"+
+                                      "button -e -en 1 ccgRL_buttonIBL2;"+
+                                      "button -e -en 1 ccgRL_buttonIBL3;"+
+                                      "optionMenuGrp -e -en 1 ccgRL_optionIBL2;"+
+                                      "checkBoxGrp -e -en 1 ccgRL_checkIBL_add1;"+
+                                      "break;"+
+                            "case 3: "+$cbIBLoff+"floatSliderGrp -e -en 1 ccgRL_floatslider_ibl1;break;"+
+                            "case 4: "+$cbIBLoff+"frameLayout -e -cl 0 ccgRL_framelayer_inner1;"+
+                                      "button -e -en 1 ccgRL_buttonIBL1;"+
+                                      "button -e -en 1 ccgRL_buttonIBL2;"+
+                                      "button -e -en 1 ccgRL_buttonIBL3;"+
+                                      "optionMenuGrp -e -en 1 ccgRL_optionIBL2;"+
+                                      "break;"+
+                          "}";
+  optionMenuGrp -e -cc $optionIBLCmd ccgRL_optionIBL1;
+  string $cmdButtonRPS = "int $menuint = `optionMenuGrp -q -sl ccgRL_option1`;"+
+                       "string $menuStr = `menuItem -q -l (\"ccgRL_menu_\"+$menuint)`;"+
+                       "ccgRenderLayer_renderPassSetting(`checkBoxGrp -q -v1 ccgRL_check1`,"+
+                                            "`ccgRenderLayer_nameConvert $menuStr`,"+
+                                            "`checkBoxGrp -q -v1 ccgRL_check2`,"+
+                                            "`floatFieldGrp -q -v1 ccgRL_float1`,"+
+                                            "`floatFieldGrp -q -v1 ccgRL_float2`,"+
+                                            "`checkBoxGrp -q -v1 ccgRL_checkRPS1`,";
+  button -e -c ("ccgRenderLayer_setBentNormal") ccgRL_buttonIBL1;
+  button -e -c ("ccgRenderLayer_selectBentNode") ccgRL_buttonIBL2;
+  button -e -c ("ccgRenderLayer_deleteBentNode") ccgRL_buttonIBL3;
+  button -e -l "Set All" -c ($cmdButtonRPS+"1);") ccgRL_button1;
+  button -e -l "Set Selected" -c ($cmdButtonRPS+"0);") ccgRL_button2;
+  
+  button -e -c "ccgRenderLayer_disableShadowChain(1)" ccgRL_button_DSCUC;
+  button -e -c "ccgRenderLayer_disableShadowChain(0)" ccgRL_button_ESCUC;
+  
+  button -e -c ("ccgRenderLayer_findObjNoncustomShader(`checkBoxGrp -q -v1 ccgRL_check_insert1`)") ccgRL_button_find;
+  
+  radioButtonGrp -e -on1 "optionMenuGrp -e -en false ccgRL_option2" -on2 "optionMenuGrp -e -en true ccgRL_option2" ccgRL_radiobuttongrp1;
+  string $cmdOption = "if(`optionMenuGrp -q -v ccgRL_option3`==\"exr\") optionMenuGrp -e -en true ccgRL_option4;"+
+                      "else optionMenuGrp -e -en false ccgRL_option4;"+
+                      "if(`optionMenuGrp -q -v ccgRL_option3`==\"rla\"||`optionMenuGrp -q -v ccgRL_option3`==\"targa\")"+
+                      "optionMenuGrp -e -sl 1 -en false ccgRL_option5; else optionMenuGrp -e -sl 2 -en true ccgRL_option5;";
+  optionMenuGrp -e -sl 1 -cc $cmdOption ccgRL_option3;
+  optionMenuGrp -e -sl 2 ccgRL_option4;
+  optionMenuGrp -e -sl 2 ccgRL_option5;
+  
+  //set value of controls from retrieving datas in the scene
+  //retrieve render pass info
+  string $ccgShaders[] = `ccgRenderLayer_findCcgShaders 0`;
+  int $numCcg = size($ccgShaders);
+  float $depthMinAverage, $depthMaxAverage, $iblMinAverage, $iblMaxAverage, $iblBrightAverage[], $iblDarkAverage[];
+  int $dMinAc, $dMaxAc, $iMinAc, $iMaxAc, $iBrightAc, $iDarkAc;
+  $depthMinAverage=$depthMaxAverage=$iblMinAverage=$iblMaxAverage=0;
+  $dMinAc=$dMaxAc=$iMinAc=$iMaxAc=$iBrightAc=$iDarkAc=0;
+  for($i=0;$i<$numCcg;$i++)
+  {
+    float $v[];
+    $v = ccgRenderLayer_getAttrValueFloat($ccgShaders[$i],"depthLimitMin");
+    if($v[0]) { $depthMinAverage += $v[1]; $dMinAc++; clear $v;}
+    $v = ccgRenderLayer_getAttrValueFloat($ccgShaders[$i],"depthLimitMax");
+    if($v[0]) { $depthMaxAverage += $v[1]; $dMaxAc++; clear $v;}
+    $v = ccgRenderLayer_getAttrValueFloat($ccgShaders[$i],"min_dist");
+    if($v[0]) { $iblMinAverage += $v[1]; $iMinAc++; clear $v;}
+    $v = ccgRenderLayer_getAttrValueFloat($ccgShaders[$i],"max_dist");
+    if($v[0]) { $iblMaxAverage += $v[1]; $iMaxAc++; clear $v;}
+    $v = ccgRenderLayer_getAttrValueFloat($ccgShaders[$i],"ibl_bright");
+    if($v[0]) { $iblBrightAverage[0] += $v[1]; $iblBrightAverage[1] += $v[2]; $iblBrightAverage[2] += $v[3]; $iBrightAc++; clear $v;}
+    $v = ccgRenderLayer_getAttrValueFloat($ccgShaders[$i],"ibl_dark");
+    if($v[0]) { $iblDarkAverage[0] += $v[1]; $iblDarkAverage[1] += $v[2]; $iblDarkAverage[2] += $v[3]; $iDarkAc++; clear $v;}
+  }
+  if($dMinAc!=0) $depthMinAverage /= $dMinAc;
+  if($dMaxAc!=0) $depthMaxAverage /= $dMaxAc;
+  if($iMinAc!=0) $iblMinAverage /= $iMinAc;
+  if($iMaxAc!=0) $iblMaxAverage /= $iMaxAc;
+  if($iBrightAc!=0) {$iblBrightAverage[0]/=$iBrightAc; $iblBrightAverage[1]/=$iBrightAc; $iblBrightAverage[2]/=$iBrightAc;}
+  if($iDarkAc!=0) {$iblDarkAverage[0]/=$iDarkAc; $iblDarkAverage[1]/=$iDarkAc; $iblDarkAverage[2]/=$iDarkAc;}
+  floatFieldGrp -e -v1 $depthMinAverage ccgRL_float1;
+  floatFieldGrp -e -v1 $depthMaxAverage ccgRL_float2;
+  floatFieldGrp -e -v1 $iblMinAverage ccgRL_float_ibl1;
+  floatFieldGrp -e -v1 $iblMaxAverage ccgRL_float_ibl2;
+  colorSliderGrp -e -rgb $iblBrightAverage[0] $iblBrightAverage[1] $iblBrightAverage[2] ccgRL_color_ibl1;
+  colorSliderGrp -e -rgb $iblDarkAverage[0] $iblDarkAverage[1] $iblDarkAverage[2] ccgRL_color_ibl2;
+  //retrieve ibl mode
+  int $ibl_enable=0;
+  for($i=0;$i<$numCcg;$i++)
+  {
+    if(`attributeExists "ibl_enable" $ccgShaders[$i]`) {
+      $ibl_enable = `getAttr ($ccgShaders[$i]+".ibl_enable")`;
+      break;
+    }
+  }
+  optionMenuGrp -e -sl ($ibl_enable+1) ccgRL_optionIBL1;
+  button -e -en 0 ccgRL_buttonIBL1;
+  button -e -en 0 ccgRL_buttonIBL2;
+  button -e -en 0 ccgRL_buttonIBL3;
+  optionMenuGrp -e -en 0 ccgRL_optionIBL2;
+  checkBoxGrp -e -en 0 ccgRL_checkIBL_add1;
+  frameLayout -e -cl 1 ccgRL_framelayer_inner1;
+  floatSliderGrp -e -en 0 ccgRL_floatslider_ibl1;
+  switch($ibl_enable){
+    case 0: break;
+    case 1: button -e -en 1 ccgRL_buttonIBL1;
+            button -e -en 1 ccgRL_buttonIBL2;
+            button -e -en 1 ccgRL_buttonIBL3;
+            optionMenuGrp -e -en 1 ccgRL_optionIBL2;
+            checkBoxGrp -e -en 1 ccgRL_checkIBL_add1;
+            break;
+    case 2: floatSliderGrp -e -en 1 ccgRL_floatslider_ibl1;
+            break;
+    case 3: frameLayout -e -cl 0 ccgRL_framelayer_inner1;
+  }
+  //retrieve enable of geo shader
+  if(`objExists ccgGeoShaderFramebuffers`){
+  int $mpoEnable = `getAttr ccgGeoShaderFramebuffers.enable`;
+  if($mpoEnable){
+    button -e -en 0 ccgRL_mpo_enable;
+    button -e -en 1 ccgRL_mpo_disable;
+    if(`objExists ccgGeoShaderCube`) setAttr ccgGeoShaderCube.v 1;
+  }else {
+        button -e -en 1 ccgRL_mpo_enable;
+        button -e -en 0 ccgRL_mpo_disable;
+        if(`objExists ccgGeoShaderCube`) setAttr ccgGeoShaderCube.v 0;
+      }
+  }
+  //retrieve file path info
+  string $filepath;
+  if(`objExists ccgGeoShaderFramebuffers`) $filepath = `getAttr ccgGeoShaderFramebuffers.filename`;
+  else if(`objExists mrOutputExr`) $filepath = `getAttr mrOutputExr.filename`;
+  textFieldGrp -e -tx $filepath ccgRL_textfieldgrp1;
+  //retrieve output channels info
+  string $fbstring, $fbbuffer1[],$fbbuffer2[];
+  int $fbi,$fbj,$fbk;
+  if(`objExists ccgGeoShaderFramebuffers`) $fbstring = `getAttr ccgGeoShaderFramebuffers.fbWriteString `;
+  else if(`objExists mrOutputExr`) $fbstring = `getAttr mrOutputExr.fbWriteString`;
+  tokenize $fbstring ";" $fbbuffer1;
+  for($fbi==0;$fbi<size($fbbuffer1);$fbi++)
+  {
+    tokenize $fbbuffer1[$fbi] "=" $fbbuffer2;
+    for($fbj=1;$fbj<=5;$fbj++)
+    {
+      string $check = "ccgRL_checkboxgrp" + $fbj;
+      int $cn=0;
+      if($fbj>=1&&$fbj<=4)
+      {
+        if(`checkBoxGrp -q -l1 $check`!="") $cn++;
+        if(`checkBoxGrp -q -l2 $check`!="") $cn++;
+        if(`checkBoxGrp -q -l3 $check`!="") $cn++;
+        if(`checkBoxGrp -q -l4 $check`!="") $cn++;
+      }
+      if($fbj==5)
+      {
+        if(`checkBoxGrp -q -l1 $check`!="") $cn++;
+      }
+      int $br; $br = 0;
+      for($fbk=1;$fbk<=$cn;$fbk++)
+      {
+        string $cmd1 = "checkBoxGrp -q -l" + $fbk + " " + $check;
+        string $label = ccgRenderLayer_nameConvert(strip(eval($cmd1)));
+        if($label == ("LAYER_"+$fbbuffer2[0]))
+        {
+          string $cmd2 = "checkBoxGrp -e -v" + $fbk + " 1 " + $check;
+          eval($cmd2);
+          $br = 1;
+          break;
+        }
+      }
+      if($br==1) break;
+    }
+  }
+  int $format, $compress;
+  if(`objExists ccgGeoShaderFramebuffers`){
+    $format = `getAttr ccgGeoShaderFramebuffers.format`;
+    $compress = `getAttr ccgGeoShaderFramebuffers.compression`;
+    int $pad = `getAttr ccgGeoShaderFramebuffers.padding`;
+    if(`attributeExists "Enable_Multi_channel_OpenExr" ccgGeoShaderFramebuffers`)
+    {
+      int $multiEXR = `getAttr ccgGeoShaderFramebuffers.Enable_Multi_channel_OpenExr`;
+      checkBoxGrp -e -v1 $multiEXR ccgRL_mpo_mutiexr;
+    }
+  if(`attributeExists "enableSubFolder" ccgGeoShaderFramebuffers`)
+    {
+      checkBoxGrp -e -v1 (`getAttr ccgGeoShaderFramebuffers.enableSubFolder`) ccgRL_mpo_subfolder;
+    }
+    optionMenuGrp -e -sl ($format+1) ccgRL_option3;
+    optionMenuGrp -e -sl ($compress+1) ccgRL_option4;
+    intSliderGrp -e -v $pad ccgRL_mpo_pad;
+  }
+  else if(`objExists mrOutputExr`){
+          $format = `getAttr mrOutputExr.format`;
+          $compress = `getAttr mrOutputExr.compression`;
+          optionMenuGrp -e -sl ($format+1) ccgRL_option3;
+          optionMenuGrp -e -sl ($compress+1) ccgRL_option4;
+        }
+  if(`objExists ccgGeoShaderFramebuffers`) radioButtonGrp -e -sl 1 ccgRL_radiobuttongrp1;
+  else if(`objExists mrOutputExr`) radioButtonGrp -e -sl 2 ccgRL_radiobuttongrp1;
+  if(`optionMenuGrp -q -sl ccgRL_option3`!=1) optionMenuGrp -e -en false ccgRL_option4;
+  else optionMenuGrp -e -en true ccgRL_option4;
+  if(`radioButtonGrp -q -sl ccgRL_radiobuttongrp1`==2) optionMenuGrp -e -en true ccgRL_option2;
+  else optionMenuGrp -e -en false ccgRL_option2;
+  string $cams1[],$cams2[];
+  int $u;
+  if(`objExists mrOutputExr`)
+  {
+    $cams1 = `listConnections -d true -sh true mrOutputExr.message`;
+    $cams2 = `ls -fl -ca`;
+    for($u=1;$u<=size($cams2);$u++)
+      if($cams1[0]==$cams2[$u-1]) break;
+    if(`menuItem -q -ex ("ccgRL_option2_menu_"+$u)`) optionMenuGrp -e -sl $u ccgRL_option2;
+  }
+  
+  button -e -c "ccgRenderLayer_multiPassOutput_enable" ccgRL_mpo_enable;
+  button -e -c "ccgRenderLayer_multiPassOutput_disable" ccgRL_mpo_disable;
+  
+  string $cmdButtonPassCreate = "string $layer[]; $layer[0] = `checkBoxGrp -q -v1 ccgRL_checkboxgrp1`?\"combined\":\" combined\";"+
+                                "$layer[1] = `checkBoxGrp -q -v2 ccgRL_checkboxgrp1`?\"col\":\" col\";"+
+                                "$layer[2] = `checkBoxGrp -q -v3 ccgRL_checkboxgrp1`?\"diff\":\" diff\";"+
+                                "$layer[3] = `checkBoxGrp -q -v4 ccgRL_checkboxgrp1`?\"ambi\":\" ambi\";"+
+                                "$layer[4] = `checkBoxGrp -q -v1 ccgRL_checkboxgrp2`?\"spec\":\" spec\";"+
+                                "$layer[5] = `checkBoxGrp -q -v2 ccgRL_checkboxgrp2`?\"incan\":\" incan\";"+
+                                "$layer[6] = `checkBoxGrp -q -v3 ccgRL_checkboxgrp2`?\"refl\":\" refl\";"+
+                                "$layer[7] = `checkBoxGrp -q -v4 ccgRL_checkboxgrp2`?\"refr\":\" refr\";"+
+                                "$layer[8] = `checkBoxGrp -q -v1 ccgRL_checkboxgrp3`?\"nor\":\" nor\";"+
+                                "$layer[9] = `checkBoxGrp -q -v2 ccgRL_checkboxgrp3`?\"ao\":\" ao\";"+
+                                "$layer[10]= `checkBoxGrp -q -v3 ccgRL_checkboxgrp3`?\"reflao\":\" reflao\";"+
+                                "$layer[11]= `checkBoxGrp -q -v4 ccgRL_checkboxgrp3`?\"shad\":\" shad\";"+
+                                "$layer[12]= `checkBoxGrp -q -v1 ccgRL_checkboxgrp4`?\"z\":\" z\";"+
+                                "$layer[13]= `checkBoxGrp -q -v2 ccgRL_checkboxgrp4`?\"globillum\":\" globillum\";"+
+                                "$layer[14]= `checkBoxGrp -q -v3 ccgRL_checkboxgrp4`?\"sssfront\":\" sssfront\";"+
+                                "$layer[15]= `checkBoxGrp -q -v4 ccgRL_checkboxgrp4`?\"sssmiddle\":\" sssmiddle\";"+
+                                "$layer[16]= `checkBoxGrp -q -v1 ccgRL_checkboxgrp5`?\"sssback\":\" sssback\";"+
+                                "int $methods = `radioButtonGrp -q -sl ccgRL_radiobuttongrp1` - 1;"+
+                                "int $formats = `optionMenuGrp -q -sl ccgRL_option3`;"+
+                                "int $compress = `optionMenuGrp -q -sl ccgRL_option4`;"+
+                                "int $imgtype = `optionMenuGrp -q -sl ccgRL_option5`;"+
+                                "string $p = `textFieldGrp -q -tx ccgRL_textfieldgrp1`;"+
+                                "int $menuint2 = `optionMenuGrp -q -sl ccgRL_option2`;"+
+                                "string $cam2 = `menuItem -q -l (\"ccgRL_option2_menu_\"+$menuint2)`;";
+  button -e -c ($cmdButtonPassCreate+"ccgRenderLayer_multiPassOutput(0,$methods,$p,$layer,$cam2,$formats,$compress,$imgtype);") ccgRL_button_passcreate;
+  button -e -c ($cmdButtonPassCreate+"ccgRenderLayer_multiPassOutput(1,$methods,$p,$layer,$cam2,$formats,$compress,$imgtype);button -e -en 0 ccgRL_mpo_enable;button -e -en 0 ccgRL_mpo_disable;") ccgRL_button_passdelete;
+  button -e -c "if(`objExists ccgGeoShaderFramebuffers`) select -r ccgGeoShaderFramebuffers;" ccgRL_button_framebuffer;
+  button -e -c ("if(`objExists mentalrayGlobals`)select mentalrayGlobals; else warning \"chose mental ray render first.\"") ccgRL_button_selectMRG;
+  button -e -c ("ccgRenderLayer_objSampleLevel(1,`intFieldGrp -q -v1 ccgRL_intfieldgrp1`,`intFieldGrp -q -v2 ccgRL_intfieldgrp1`)") ccgRL_sample_button1;
+  button -e -c ("ccgRenderLayer_objSampleLevel(0,0,2)") ccgRL_sample_button2;
+  showWindow ccgRL_windows;
+}

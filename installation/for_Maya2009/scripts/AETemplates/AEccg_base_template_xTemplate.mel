@@ -1,0 +1,82 @@
+
+global proc AEccg_base_template_xTemplate ( string $nodeName ) 
+{ 
+	AEswatchDisplay $nodeName; 
+
+	editorTemplate -beginScrollLayout;
+
+	editorTemplate -beginLayout "Common Material Attributes" -collapse 0;
+		editorTemplate -label "Blend Mode" -addControl "blendMode";
+		editorTemplate -label "Color" -addControl "color";
+		editorTemplate -label "Overall Color" -addControl "overallColor";
+		editorTemplate -label "Transparency" -addControl "transparency";
+		editorTemplate -label "Ambient" -addControl "ambient";
+		editorTemplate -label "Incandescence" -addControl "incandescence";
+		editorTemplate -label "Diffuse Shader" -addControl "diffuse";
+		editorTemplate -label "Normal Mapping" -addControl "normalMapping";
+	editorTemplate -endLayout; 
+	
+	editorTemplate -beginLayout "Specular Shading" -collapse 0; 
+		editorTemplate -label "Specular Shader" -addControl "specular";
+		editorTemplate -label "Reflectivity" -addControl "reflectivity";
+		editorTemplate -label "Reflection Shader" -addControl "reflection";
+	editorTemplate -endLayout;
+	
+	
+	editorTemplate -beginLayout "Refraction" -collapse 1; 
+		editorTemplate -label "Refractive Index" -addControl "refractiveIndex";
+		editorTemplate -label "Refracted Color" -addControl "refractedColor";
+		editorTemplate -label "Refraction Shader" -addControl "refraction";
+		editorTemplate -label "Use Refraction Shader" -addControl "useRefractionShader";
+	editorTemplate -endLayout;
+	
+	editorTemplate -beginLayout "SubSurface Scattering" -collapse 1;
+		editorTemplate -label "SSS Multiply" -addControl "sss_multiply";
+		editorTemplate -label "SSS Front" -addControl "sss_front";
+		editorTemplate -label "SSS Middle" -addControl "sss_middle";
+		editorTemplate -label "SSS Back" -addControl "sss_back";
+	editorTemplate -endLayout;
+	
+	editorTemplate -beginLayout "Translucency" -collapse 1;
+		editorTemplate -label "Translucent Color" -addControl "translucencyMultiply";
+		editorTemplate -label "Translucency Shader" -addControl "translucency";
+	editorTemplate -endLayout;
+	
+	editorTemplate -beginLayout "Indirect Illumination" -collapse 1;
+		editorTemplate -label "Indirect Color" -addControl "globalIllumMultiply";
+		editorTemplate -label "Indirect Shader" -addControl "globalIllum";
+		editorTemplate -label "Use Indirect Shader" -addControl "useGlobalIllumShader";
+	editorTemplate -endLayout;
+	
+	editorTemplate -beginLayout "Occlusion" -collapse 1; 
+		editorTemplate -label "Ambient Occlusion" -addControl "ambientOcclusion";
+		editorTemplate -label "Reflect Occlusion" -addControl "reflectOcclusion";
+		editorTemplate -label "Add To Combined" -addControl "add_to_combined";
+	editorTemplate -endLayout;
+	
+	editorTemplate -beginLayout "Render Layers Control" -collapse 1; 
+		editorTemplate -label "Depth Limit Min" -addControl "depthLimitMin";
+		editorTemplate -label "Depth Limit Max" -addControl "depthLimitMax";
+		editorTemplate -label "Layer" -addControl "layer";
+		editorTemplate -beginNoOptimize -label "Output All Layers" -addControl "passesInOnce";
+		editorTemplate -label "Make Diffuse Pass Opaque" -addControl "diffuseOpacity";
+		editorTemplate -label "Optimal Diffuse Compute" -addControl "optimal";
+		editorTemplate -endNoOptimize -label "Enable Transparent Passes" -addControl "enableTransPasses";
+		editorTemplate -label "fbWriteString" -addControl "fbWriteString"; 
+	editorTemplate -endLayout; 
+
+	editorTemplate -beginLayout "Shadow Trace Function" -collapse 1; 
+		editorTemplate -io -ann "Enable if shaders are hidden behind the ccg_base_mix20layers" -label "Disable Shadow Chain" -addControl "disableShadowChain";
+	editorTemplate -endLayout; 
+
+	editorTemplate -beginLayout "Hardware Texturing" -collapse 1; 
+		string $attrTokens = "color ambient specular";
+		AEhardwareTextureTemplate($nodeName, $attrTokens);
+	editorTemplate -endLayout;
+
+	AEdependNodeTemplate $nodeName;
+	editorTemplate -addExtraControls;
+
+	editorTemplate -endScrollLayout; 
+} 
+

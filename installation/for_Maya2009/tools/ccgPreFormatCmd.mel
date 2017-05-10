@@ -1,0 +1,74 @@
+global proc string[] ccgPreFormatCmd_nodeType()
+{
+  return {"ccg_output_exr",
+          "ccg_geo_framebuffer"};
+}
+
+
+global proc ccgPreFormatCmd(string $path, int $format, int $imgtype)
+{
+  string $nodeTypes[],$tempArray[];
+  int $i,$j,$size1,$size2;
+  
+  $nodeTypes = ccgPreFormatCmd_nodeType();
+  $size1 = size($nodeTypes);
+  clear $tempArray;
+  
+  if($format==1||$format==4)  $imgtype = 0;
+  
+  for($i=0;$i<$size1;$i++)
+  {
+    $tempArray = `ls -fl -type $nodeTypes[$i]`;
+    $size2 = size($tempArray);
+    for($j=0;$j<$size2;$j++)
+    {
+      if(`attributeExists "filename" $tempArray[$j]`&&$path!="")
+        setAttr -type "string" ($tempArray[$j]+".filename") $path;
+      if(`attributeExists "type_fb" $tempArray[$j]`&&$imgtype!=-1)
+      {
+        if($imgtype==0)setAttr ($tempArray[$j]+".type_fb") 1;
+        else setAttr ($tempArray[$j]+".type_fb") 0;
+      }
+      if(`attributeExists "format" $tempArray[$j]`&&$format!=-1)
+        setAttr ($tempArray[$j]+".format") $format;
+    }
+  }
+  
+  //mentalrayUserBuffer
+  clear $tempArray;
+  $tempArray = `ls -fl -type mentalrayUserBuffer`;
+  $size1 = size($tempArray);
+  for($i=0;$i<$size1;$i++)
+  {
+    if(`gmatch $tempArray[$i] "*mrUserfb*"`)
+    {
+      if($imgtype==0)setAttr ($tempArray[$i]+".dataType") 2;
+      else setAttr ($tempArray[$i]+".dataType") 5;
+    }
+  }
+  
+  //camera output pass
+  if(`objExists mrOutputExr`)
+  {
+    clear $tempArray;
+    $tempArray = `listConnections -s off -d on -sh on -scn on mrOutputExr.message`;
+    for($i=0;$i<size($tempArray);$i++)
+    {
+      if($imgtype==0)
+      {
+        setAttr ($tempArray[$i]+".miFbBitsizeColor") 0;
+        setAttr ($tempArray[$i]+".miFbBitsizeAlpha") 0;
+      }else {
+              setAttr ($tempArray[$i]+".miFbBitsizeColor") 3;
+              setAttr ($tempArray[$i]+".miFbBitsizeAlpha") 3;
+            }
+    }
+  }
+  
+  //render global
+  if(`objExists miDefaultFramebuffer`)
+  {
+    if($imgtype==0)setAttr miDefaultFramebuffer.datatype 2;
+    else setAttr miDefaultFramebuffer.datatype 5;
+  }
+}

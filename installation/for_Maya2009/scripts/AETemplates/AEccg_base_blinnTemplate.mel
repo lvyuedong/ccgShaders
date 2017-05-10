@@ -1,0 +1,86 @@
+
+global proc AEccg_base_blinnTemplate ( string $nodeName ) 
+{ 
+	AEswatchDisplay $nodeName; 
+
+	editorTemplate -beginScrollLayout;
+
+	editorTemplate -beginLayout "Common Material Attributes" -collapse 0; 
+		editorTemplate -label "Color" -addControl "color";
+		editorTemplate -label "Transparency" -addControl "transparency";
+		editorTemplate -label "Ambient" -addControl "ambient";
+		editorTemplate -label "Incandescence" -addControl "incandescence";
+		editorTemplate -label "Normal Mapping" -addControl "normalMapping";
+		editorTemplate -label "Diffuse" -addControl "diffuse";
+	editorTemplate -endLayout; 
+	
+	editorTemplate -beginLayout "Specular Shading" -collapse 0; 
+		editorTemplate -label "Eccentricity" -addControl "eccentricity";
+		editorTemplate -label "Specular Roll Off" -addControl "specularRolloff";
+		editorTemplate -label "Specular Color" -addControl "specular";
+		editorTemplate -label "Reflectivity" -addControl "reflectivity";
+		editorTemplate -label "Reflected Color" -addControl "reflectedColor";
+		editorTemplate -label "Inside Reflect Limit" -addControl "insideReflectLimit";
+		editorTemplate -label "Disable Raytrace Reflection" -addControl "disableRayRefl";
+	editorTemplate -endLayout; 
+	
+	editorTemplate -beginLayout "Fresnel Reflectance" -collapse 1; 
+		editorTemplate -label "Fresnel Mode" -addControl "fresnel_mode";
+		editorTemplate -label "Fresnel Min Value" -addControl "fresnel_min";
+		editorTemplate -label "Fresnel Max Value" -addControl "fresnel_max";
+		editorTemplate -label "In Reflective Index" -addControl "n_incidence";
+		editorTemplate -label "Out Reflective Index" -addControl "n_transmission";
+		editorTemplate -label "Enable Fresnel Diffuse" -addControl "fresnel_diffuse";
+		editorTemplate -label "Enable Fresnel Specular" -addControl "fresnel_specular";
+	editorTemplate -endLayout;
+	
+	editorTemplate -beginLayout "Refraction" -collapse 1; 
+		editorTemplate -label "Refractive Index" -addControl "refractiveIndex";
+		editorTemplate -label "Refracted Color" -addControl "refractedColor";
+	editorTemplate -endLayout;
+	
+	editorTemplate -beginLayout "Image Based Lighting" -collapse 1; 
+		editorTemplate -label "Enable IBL" -addControl "ibl_enable";
+		editorTemplate -label "Bent Normal" -addControl "bent";
+		editorTemplate -label "Bent Space" -addControl "bent_space";
+		editorTemplate -label "Shadow Mode" -addControl "ibl_shadow_mode";
+		editorTemplate -label "Min Distance" -addControl "min_dist";
+		editorTemplate -label "Max Distance" -addControl "max_dist";
+		editorTemplate -label "Bright" -addControl "ibl_bright";
+		editorTemplate -label "Dark" -addControl "ibl_dark";
+		editorTemplate -label "Emit Diffuse" -addControl "ibl_emit_diffuse";
+		editorTemplate -label "Emit Specular" -addControl "ibl_emit_specular";
+		editorTemplate -label "Lighting Sample Angle" -addControl "ibl_angle";
+	editorTemplate -endLayout;
+	
+	editorTemplate -beginLayout "Occlusion" -collapse 1; 
+		editorTemplate -label "Ambient Occlusion" -addControl "ambientOcclusion";
+		editorTemplate -label "Reflect Occlusion" -addControl "reflectOcclusion";
+		editorTemplate -label "Add To Combined" -addControl "add_to_combined";
+	editorTemplate -endLayout;
+	
+	editorTemplate -beginLayout "Render Layers Control" -collapse 1; 
+		editorTemplate -label "Depth Limit Min" -addControl "depthLimitMin";
+		editorTemplate -label "Depth Limit Max" -addControl "depthLimitMax";
+		editorTemplate -label "Layer" -addControl "layer";
+		editorTemplate -beginNoOptimize -label "Output All Layers" -addControl "passesInOnce";
+		editorTemplate -label "Make Diffuse Pass Opaque" -addControl "diffuseOpacity";
+		editorTemplate -endNoOptimize -label "Enable Transparent Passes" -addControl "enableTransPasses";
+		editorTemplate -label "fbWriteString" -addControl "fbWriteString"; 
+	editorTemplate -endLayout;
+	
+	editorTemplate -beginLayout "Shadow Trace Function" -collapse 1; 
+		editorTemplate -io -ann "Enable if shaders are hidden behind the ccg_base_mix20layers" -label "Disable Shadow Chain" -addControl "disableShadowChain";
+	editorTemplate -endLayout; 
+
+	editorTemplate -beginLayout "Hardware Texturing" -collapse 1; 
+		string $attrTokens = "color ambient specular";
+		AEhardwareTextureTemplate($nodeName, $attrTokens);
+	editorTemplate -endLayout;
+
+	AEdependNodeTemplate $nodeName;
+	editorTemplate -addExtraControls;
+
+	editorTemplate -endScrollLayout; 
+} 
+

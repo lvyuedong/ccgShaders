@@ -1,0 +1,1689 @@
+global proc ccgSE_IBL_AdvErrorWin(int $error)
+{
+  string $info;
+  switch($error){
+    case 2:   $info = "Currently only support the following image format:\n" +
+                      "pix, bmp, dds, gif, jpg, cin, iff, ct, map, st\n"+
+                      "png, eps, yuv, rgb, pic, tim, tga, tif, rla, xpm, hdr.";
+              break;
+    case 3:   $info = "Files doesn't exists!";
+              break;
+    case 4:   $info = "When trying to convert texture, there was something wrong happened!";
+              break;
+    case 5:   $info = "When trying to resize texture, something unexpected occured!";
+              break;
+    default:  $info = "There's something wrong! Please don't feel bad.";
+              break;
+  }
+  
+  confirmDialog -title "Error!" -message $info -button "OK";
+}
+
+global proc float ccgSE_IBL_AdvFloatDecimal(float $input, int $decimal)
+{
+  float $result = $input;
+  float $d = pow(10.0, $decimal);
+  if($decimal>=1){
+    $result = float(floor($result*$d+0.5))/$d;
+  }
+  return $result;
+}
+
+global proc float[] ccgSE_IBL_AdvVector2UV(vector $input)
+{
+  float $uv[2];
+  $uv[0] = acos(-$input.y)/3.14159265358979323846;
+  if($input.x==0 && $input.z==0) $uv[1] = 0;
+  else if($input.x==0){
+          if($input.z>0) $uv[1] = 0.25;
+          else $uv[1] = 0.75;
+        }else if($input.z==0){
+                if($input.x>0) $uv[1] = 0;
+                else $uv[1] = 0.5;
+              }else {
+                      float $atanV = atan2($input.z, $input.x);
+                      if($atanV>=0) $uv[1] = $atanV/6.283185307179586476925;
+                      else $uv[1] = (6.283185307179586476925+$atanV)/6.283185307179586476925;
+                    }
+  return $uv;
+}
+
+global proc float[] ccgSE_IBL_AdvUV2Vector(float $uv[])
+{
+  if($uv[0]<0)$uv[0]=0.0;
+  else if($uv[0]>1) $uv[0]=1.0;
+  if($uv[1]<0)$uv[1]=0.0;
+  else if($uv[1]>1) $uv[1]=1.0;
+  
+  float $result[3];
+  $result[1] = cosd((1.0 - $uv[0])*180.0);
+  if($result[1]==-1 || $result[1]==1){
+    $result[0] = $result[2] = 0.0;
+  }else {
+          float $length = sqrt(1.0 - pow($result[1], 2.0));
+          $result[0] = cosd($uv[1]*360.0) * $length;
+          $result[2] = sind($uv[1]*360.0) * $length;
+        }
+  normalize($result);
+  return $result;
+}
+
+global proc float[] ccgSE_IBL_AdvVector2Rotate(vector $input)
+{
+  float $rotate[3];
+  $input = unit($input);
+  $rotate[0] = asind($input.y);
+  if($input.x==0 && $input.z==0) $rotate[1] = 0;
+  else if($input.x==0){
+          if($input.z>0) $rotate[1] = -180;
+          else $rotate[1] = 0;
+        }else if($input.z==0){
+                if($input.x>0) $rotate[1] = -90;
+                else $rotate[1] = 90;
+              }else {
+                      float $atanV = atan2d($input.z, $input.x);
+                      $rotate[1] = -$atanV - 90;
+                    }
+  $rotate[2] = 0;
+  return $rotate;
+}
+
+global proc ccgSE_IBL_AdvButtonRefresh()
+{
+  string $children[] = `formLayout -q -ca ccgSE_IBL_Adv_formlayout`;
+  $children = stringArrayRemove({"ccgSE_IBL_Adv_image"}, $children);
+  int $num = size($children);
+  int $i;
+  for($i=0;$i<$num;$i++){
+    if(`button -q -ex $children[$i]`){
+      button -e -en 0 $children[$i];
+      button -e -en 1 $children[$i];
+    }
+  }
+}
+
+global proc float[] ccgSE_IBL_AdvGetButtonAnno(string $button)
+{
+  string $orig_anno = `button -q -annotation $button`;
+  string $tok[];
+  tokenize $orig_anno ", " $tok;
+  float $uv[2];
+  if($tok[1]!="") $uv[0] = float($tok[1]);
+  else $uv[0] = 0;
+  if($tok[2]!="") $uv[1] = float($tok[2]);
+  else $uv[1] = 0;
+  return $uv;
+}
+
+global proc string ccgSE_IBL_AdvGetButtonName(string $button)
+{
+  string $tok[];
+  tokenize $button "|" $tok;
+  return $tok[size($tok)-1];
+}
+
+global proc ccgSE_IBL_AdvButtonColorChanged(int $mode, float $color[])
+{
+  global float $gCcgSE_IBL_AdvButtonColors[];
+  if($mode==1) $gCcgSE_IBL_AdvButtonColors = $color;
+  
+  //mode: 0 for original, 1 for changed
+  string $children[] = `formLayout -q -ca ccgSE_IBL_Adv_formlayout`;
+  $children = stringArrayRemove({"ccgSE_IBL_Adv_image"}, $children);
+  int $num = size($children);
+  int $i;
+  for($i=0;$i<$num;$i++){
+    if(`button -q -ex $children[$i]`){
+      if($mode==0){
+        if(`button -q -l $children[$i]`==""){
+          button -e -bgc $color[0] $color[1] $color[2] $children[$i];
+          button -e -en 0 $children[$i];
+          button -e -en 1 $children[$i];
+        }
+      }else if($mode==1){
+                if(`button -q -l $children[$i]`==" "){
+                  button -e -bgc $color[0] $color[1] $color[2] $children[$i];
+                  button -e -en 0 $children[$i];
+                  button -e -en 1 $children[$i];
+                }
+            }
+    }
+  }
+}
+
+global proc ccgSE_IBL_AdvButtonAnnotationUpdate(string $button, float $x, float $y)
+{
+  float $orig_uv[2] = ccgSE_IBL_AdvGetButtonAnno($button);
+  if($x!=-1) $orig_uv[0] = $x;
+  if($y!=-1) $orig_uv[1] = $y;
+  string $anno = "UV: "+ccgSE_IBL_AdvFloatDecimal($orig_uv[0],6)+", "+ccgSE_IBL_AdvFloatDecimal($orig_uv[1],6);
+  if(`button -q -ex $button`) button -e -annotation $anno $button;
+}
+
+global proc int ccgSE_IBL_AdvButtonCount()
+{
+  int $count = `formLayout -q -nch ccgSE_IBL_Adv_formlayout` - 1;
+  if(`text -q -ex ccgSE_IBL_Adv_displayInfo`) text -e -l (" Number of Lights: "+$count) ccgSE_IBL_Adv_displayInfo;
+  return $count;
+}
+
+global proc ccgSE_IBL_AdvPrintButtonInfo(string $button)
+{
+  float $uv[2];
+  string $uvstring="";
+  int $uvChanged = 0;
+  
+  $uvstring = `button -q -annotation $button`;
+  
+  string $tok[];
+  tokenize $uvstring ", " $tok;
+  $uv[0] = float(strip($tok[1]));
+  $uv[1] = float(strip($tok[2]));
+  if($uv[0]<0) $uv[0] = 0;
+  else if($uv[0]>1) $uv[0] = 1;
+  if($uv[1]<0) $uv[1] = 0;
+  else if($uv[1]>1) $uv[1] = 1;
+  $uvstring = string($uv[0])+", "+string($uv[1]);
+  
+  float $pos[3] = ccgSE_IBL_AdvUV2Vector($uv);
+  if(`text -q -ex ccgSE_IBL_Adv_displayInfo1`) text -e -l (" Last picked light UV: "+$uvstring) ccgSE_IBL_Adv_displayInfo1;
+  if(`text -q -ex ccgSE_IBL_Adv_displayInfo2`) text -e -l (" Last picked light Position: "+ccgSE_IBL_AdvFloatDecimal($pos[0],6)+", "+ccgSE_IBL_AdvFloatDecimal($pos[1],6)+", "+ccgSE_IBL_AdvFloatDecimal($pos[2],6)) ccgSE_IBL_Adv_displayInfo2;
+}
+
+global proc float[] ccgSE_IBL_AdvUVSwap(int $mode, float $uv[])
+{
+  float $results[2];
+
+  switch($mode){
+    case 0:   $results[0] = $uv[0];
+              $results[1] = $uv[1];
+              break;
+    case 1:   $results[0] = 1 - $uv[0];
+              $results[1] = $uv[1];
+              break;
+    case 2:   $results[0] = $uv[0];
+              $results[1] = 1 - $uv[1];
+              break;
+    case 3:   $results[0] = 1 - $uv[0];
+              $results[1] = 1 - $uv[1];
+              break;
+    case 4:   $results[0] = $uv[1];
+              $results[1] = $uv[0];
+              break;
+    default:  $results[0] = $uv[1];
+              $results[1] = $uv[0];
+              break;
+  }
+  
+  return $results;
+}
+
+global proc ccgSE_IBL_AdvButtonUvMove(string $button, float $u, float $v, int $mode)
+{
+  //mode: 0 don't change button label and bgcolor
+  //      1 change button label and bgcolor
+  
+  global float $gCcgSE_IBL_AdvButtonColors[];
+  float $swapuv[2] = ccgSE_IBL_AdvUVSwap(0, {$u,$v});
+  
+  //move light position
+  if(`button -q -ex $button`){
+    int $form_nd = `formLayout -q -nd ccgSE_IBL_Adv_formlayout`;
+    if($swapuv[0]!=-1){
+      int $index_x = ($swapuv[0])*float($form_nd);
+      formLayout -e
+        -attachPosition $button "left" 0 $index_x
+      ccgSE_IBL_Adv_formlayout;
+    }
+    if($swapuv[1]!=-1){
+      int $index_y = (1.0 - $swapuv[1])*float($form_nd);
+      formLayout -e
+        -attachPosition $button "top" 0 $index_y
+      ccgSE_IBL_Adv_formlayout;
+    }
+    ccgSE_IBL_AdvButtonAnnotationUpdate($button, $swapuv[0], $swapuv[1]);
+    if($mode==1){
+      button -e -l " " $button;
+      button -e -bgc $gCcgSE_IBL_AdvButtonColors[0] $gCcgSE_IBL_AdvButtonColors[1] $gCcgSE_IBL_AdvButtonColors[2] $button;
+    }
+  }
+}
+
+global proc ccgSE_IBL_AdvUvEditorFindLight()
+{
+  global int $gCcgSE_IBL_AdvUvReadingDirection;
+  
+  if(`objExists ccgLightArray`){
+    string $child[] = `listRelatives -c -pa -type "transform" ccgLightArray`;
+    $child = stringArrayRemove({"ccgLA_texture_Preview","ccgLA_center"},$child);
+    int $i,$j;
+    int $num = size($child);
+    string $searchlights[];
+    float $uv[];
+	  $uv[0] = `floatSliderGrp -q -v ccgSE_IBL_AdvUvEditorSlider1`;
+	  $uv[1] = `floatSliderGrp -q -v ccgSE_IBL_AdvUvEditorSlider2`;
+	  float $tor = `floatSliderGrp -q -v ccgSE_IBL_AdvUvEditorSlider3`;
+    $uv = ccgSE_IBL_AdvUVSwap($gCcgSE_IBL_AdvUvReadingDirection, $uv);
+    float $bpos[3] = ccgSE_IBL_AdvUV2Vector($uv);
+    for($i=0,$j=0;$i<$num;$i++){
+      if(`objExists $child[$i]`){
+        float $pos[3] = `getAttr ($child[$i]+".translate")`;
+        if(abs($bpos[0]-$pos[0])<$tor && abs($bpos[1]-$pos[1])<$tor && abs($bpos[2]-$pos[2])<$tor){
+          int $index = int(`match "[0-9]+$" $child[$i]`);
+          if(`objExists ("ccgLA_light_"+$index)`){
+            $searchlights[$j] = "ccgLA_light_" + $index;
+            $j++;
+          }
+        }
+      }
+    }
+    if($j){
+      print $searchlights;
+      select -r $searchlights;
+    }
+  }
+}
+
+global proc ccgSE_IBL_AdvButtonUvEditor(string $button)
+{
+  if(`button -q -ex $button`){
+    ccgSE_IBL_AdvPrintButtonInfo($button);
+    if(`windowPref -exists ccgSE_IBL_AdvButtonUvWindow`) windowPref -e -w 400 -h 60 ccgSE_IBL_AdvButtonUvWindow;
+    if(`window -exists ccgSE_IBL_AdvButtonUvWindow`) deleteUI ccgSE_IBL_AdvButtonUvWindow;
+    window -t ("Lights' Position Editor -- "+ccgSE_IBL_AdvGetButtonName($button)) -in "UV" -w 400 -h 60 -rtf true -s 1 ccgSE_IBL_AdvButtonUvWindow;
+      columnLayout -adj 1;
+      float $uv[2] = ccgSE_IBL_AdvGetButtonAnno($button);
+      floatSliderGrp -l "U value" -cw 1 50 -adj 3 -field true -min 0 -max 1 -value $uv[0] -pre 6 -dc ("ccgSE_IBL_AdvButtonUvMove(\""+$button+"\",#1,-1,1);floatSliderButtonGrp -e -en 0 ccgSE_IBL_AdvUvEditorSlider3;") -cc ("ccgSE_IBL_AdvButtonUvMove(\""+$button+"\",#1,-1,1);floatSliderButtonGrp -e -en 0 ccgSE_IBL_AdvUvEditorSlider3;") ccgSE_IBL_AdvUvEditorSlider1;
+      floatSliderGrp -l "V value" -cw 1 50 -adj 3 -field true -min 0 -max 1 -value $uv[1] -pre 6 -dc ("ccgSE_IBL_AdvButtonUvMove(\""+$button+"\",-1,#1,1);floatSliderButtonGrp -e -en 0 ccgSE_IBL_AdvUvEditorSlider3;") -cc ("ccgSE_IBL_AdvButtonUvMove(\""+$button+"\",-1,#1,1);floatSliderButtonGrp -e -en 0 ccgSE_IBL_AdvUvEditorSlider3;") ccgSE_IBL_AdvUvEditorSlider2;
+      floatSliderButtonGrp -l "Search Tolerance" -cw 1 100 -adj 3 -field true -min 0 -max 1 -value 0.001 -pre 6 -s 0.000001 -bl "Find Light" -bc "ccgSE_IBL_AdvUvEditorFindLight();" ccgSE_IBL_AdvUvEditorSlider3;
+      button -l "Close" -c "deleteUI ccgSE_IBL_AdvButtonUvWindow";
+    showWindow ccgSE_IBL_AdvButtonUvWindow;
+    if(`button -q -l $button`==" ") floatSliderButtonGrp -e -en 0 ccgSE_IBL_AdvUvEditorSlider3;
+  }
+}
+
+global proc ccgSE_IBL_AdvButtonResize(int $resize)
+{
+  string $children[] = `formLayout -q -ca ccgSE_IBL_Adv_formlayout`;
+  $children = stringArrayRemove({"ccgSE_IBL_Adv_image"}, $children);
+  int $num = size($children);
+  int $i;
+  int $amount = 0;
+  progressWindow -title "Resize Light Points" -progress $amount -status "Resizing: 0%" -isInterruptable false;
+  for($i=0;$i<$num;$i++){
+      button -e -w $resize -h $resize $children[$i];
+      $amount = int( (float($i+1)/float($num)) * 100.0 );
+      progressWindow -edit -progress $amount -status ("Resizing: "+$amount+"%");
+  }
+  progressWindow -endProgress;
+}
+
+global proc ccgSE_IBL_AdvRefreshImageControl()
+{
+  global string $gCcgSE_IBL_AdvImagePath;
+  if(`image -q -ex ccgSE_IBL_Adv_image`) deleteUI -ctl ccgSE_IBL_Adv_image;
+  image -p ccgSE_IBL_Adv_formlayout -en 0 -image $gCcgSE_IBL_AdvImagePath ccgSE_IBL_Adv_image;
+  formLayout -e
+    -attachForm ccgSE_IBL_Adv_image "top" 0
+    -attachForm ccgSE_IBL_Adv_image "left" 0
+    -attachForm ccgSE_IBL_Adv_image "right" 0
+    -attachForm ccgSE_IBL_Adv_image "bottom" 0
+  ccgSE_IBL_Adv_formlayout;
+}
+
+global proc string[] ccgSE_IBL_AdvformlayoutDrag(string $dragControl, int $x, int $y, int $mods)
+{
+    global int $gCcgSE_IBL_AdvButtonSize;
+    global float $gCcgSE_IBL_AdvButtonColors[];
+    
+    if($mods==1){
+      int $childNum = `formLayout -q -nch ccgSE_IBL_Adv_formlayout`;
+      string $buttonname = `button -p ccgSE_IBL_Adv_formlayout -w $gCcgSE_IBL_AdvButtonSize -h $gCcgSE_IBL_AdvButtonSize -rs 0 -bgc $gCcgSE_IBL_AdvButtonColors[0] $gCcgSE_IBL_AdvButtonColors[1] $gCcgSE_IBL_AdvButtonColors[2]
+            -l "" -dgc "ccgSE_IBL_AdvButtonDrag"`;
+      button -e -c ("ccgSE_IBL_AdvButtonUvEditor(\""+$buttonname+"\")") $buttonname;
+      int $form_w = `formLayout -q -w ccgSE_IBL_Adv_formlayout`;
+      int $form_h = `formLayout -q -h ccgSE_IBL_Adv_formlayout`;
+      int $form_nd = `formLayout -q -nd ccgSE_IBL_Adv_formlayout`;
+      int $index_x = floor(float($x)/float($form_w)*float($form_nd));
+      int $index_y = floor(float($y)/float($form_h)*float($form_nd));
+      formLayout -e
+        -attachPosition $buttonname "left" 0 $index_x
+        -attachPosition $buttonname "top" 0 $index_y
+      ccgSE_IBL_Adv_formlayout;
+      button -e -l " " $buttonname;
+      float $swapuv[2] = ccgSE_IBL_AdvUVSwap(0, {(float($index_x)/float($form_nd)),(1.0-float($index_y)/float($form_nd))});
+      ccgSE_IBL_AdvButtonAnnotationUpdate($buttonname, $swapuv[0], $swapuv[1]);
+      ccgSE_IBL_AdvPrintButtonInfo($buttonname);
+      //put the image control behind the button;
+      ccgSE_IBL_AdvRefreshImageControl();
+      ccgSE_IBL_AdvButtonCount();
+    }
+    
+    return { $dragControl };
+}
+
+global proc ccgSE_IBL_AdvformlayoutDrop(string $drag, string $drop, string $msgs[],int $x, int $y, int $type)
+{
+  global float $gCcgSE_IBL_AdvButtonColors[];
+  
+  string $tok[];
+  tokenize $msgs[0] "|" $tok;
+  if(!`gmatch $tok[size($tok)-1] "*ccgSE_IBL_Adv_formlayout*"`){
+    if(`gmatch $tok[size($tok)-1] "*delete*"`){
+      string $willdelete = $tok[size($tok)-2];
+      if(`button -q -ex $willdelete`) deleteUI -ctl $willdelete;
+    }else {
+      int $form_w = `formLayout -q -w ccgSE_IBL_Adv_formlayout`;
+      int $form_h = `formLayout -q -h ccgSE_IBL_Adv_formlayout`;
+      int $form_nd = `formLayout -q -nd ccgSE_IBL_Adv_formlayout`;
+      int $index_x = floor(float($x)/float($form_w)*float($form_nd));
+      int $index_y = floor(float($y)/float($form_h)*float($form_nd));
+      formLayout -e
+        -attachPosition $msgs[0] "top" 0 $index_y
+        -attachPosition $msgs[0] "left" 0 $index_x
+      ccgSE_IBL_Adv_formlayout;
+      button -e -l " " $msgs[0];
+      float $swapuv[2] = ccgSE_IBL_AdvUVSwap(0, {(float($index_x)/float($form_nd)),(1.0-float($index_y)/float($form_nd))});
+      button -e -bgc $gCcgSE_IBL_AdvButtonColors[0] $gCcgSE_IBL_AdvButtonColors[1] $gCcgSE_IBL_AdvButtonColors[2] $msgs[0];
+      ccgSE_IBL_AdvButtonAnnotationUpdate($msgs[0], $swapuv[0], $swapuv[1]);
+      ccgSE_IBL_AdvPrintButtonInfo($msgs[0]);
+    }
+  }
+  
+  ccgSE_IBL_AdvButtonCount();
+}
+
+global proc string[] ccgSE_IBL_AdvButtonDrag(string $dragControl, int $x, int $y, int $mods)
+{ 
+  if($mods==2) return {($dragControl+"|delete")};
+  return {$dragControl};
+}
+
+global proc string[] ccgSE_IBL_AdvFindTexture()
+{
+  string $result[3];
+  $result[2] = "0";
+  
+  if(`objExists ccgIblGeoShader`){
+    string $mrtexture[] = `listConnections -d 0 -s 1 -scn 1 ccgIblGeoShader.texture`;
+    if($mrtexture[0]=="") return $result;
+    string $textureFile;
+    string $pointsFile;
+    string $workspaces = `workspace -q -rd`;
+    if(`nodeType $mrtexture[0]`=="mentalrayTexture" || `nodeType $mrtexture[0]`=="file"){
+      $textureFile = `getAttr ($mrtexture[0]+".fileTextureName")`;
+    }else return $result;
+    
+    if($textureFile!=""){
+      if(`startsWith $textureFile "sourceimages"`)
+        $textureFile = $workspaces + $textureFile;
+      if(`filetest -r $textureFile`){
+          $pointsFile = fromNativePath(`getAttr ccgIblGeoShader.light_points_file`);
+          $result[0] = $textureFile;
+          $result[1] = $pointsFile;
+          $result[2] = "1";
+          return $result;
+      }else return $result;
+    }else return $result;
+    
+  }else return $result;
+  
+  return $result;
+}
+
+global proc float[] ccgSE_IBL_AdvString2Float(string $nextline)
+{
+  string $tok[];
+  tokenize $nextline " " $tok;
+  float $result[3];
+  $result[0] = float($tok[0]);
+  $result[1] = float($tok[1]);
+  $result[2] = float($tok[2]);
+  
+  return $result;
+}
+
+global proc int ccgSE_IBL_AdvIsRightExt(string $ext)
+{
+  $ext = tolower($ext);
+  switch($ext){
+    case "pix":   break;
+    case "bmp":   break;
+    case "dds":   break;
+    case "gif":   break;
+    case "jpg":   break;
+    case "cin":   break;
+    case "iff":   break;
+    case "ct":    break;
+    case "map":   break;
+    case "st":    break;
+    case "png":   break;
+    case "eps":   break;
+    case "yuv":   break;
+    case "rgb":   break;
+    case "pic":   break;
+    case "tim":   break;
+    case "tga":   break;
+    case "tif":   break;
+    case "rla":   break;
+    case "xpm":   break;
+    case "hdr":   break;
+    default:      return 0;
+  }
+  return 1;
+}
+
+global proc string ccgSE_IBL_AdvTexturePromptWin()
+{
+  global string $gCcgSE_IBL_AdvConvertPath;
+  
+  string $back = `promptDialog
+    -title "Texture Path"
+    -message "Enter texture path:"
+    -text $gCcgSE_IBL_AdvConvertPath
+    -button "OK" -button "Cancel"
+    -defaultButton "OK" -cancelButton "Cancel"
+    -dismissString "Cancel"`;
+  if($back=="OK"){
+    string $text = fromNativePath(`promptDialog -query -text`);
+    if(`filetest -r $text`){
+      if(!ccgSE_IBL_AdvIsRightExt(`fileExtension $text`)){
+        ccgSE_IBL_AdvErrorWin(2);
+        return "";
+      }else return $text;
+    }else {ccgSE_IBL_AdvErrorWin(3); return "";}
+  }else return "";
+  
+  return "";
+}
+
+global proc string ccgSE_IBL_AdvPointsPromptWin()
+{
+  //mode 0 for geo light, 1 for light array
+  global string $gCcgSE_IBL_AdvPointFilePath;
+  
+  string $messages;
+  //$messages = "Enter light positions' data path:";
+  $messages = "Enter light positions' data path:\nLeave blank will read lights' positions from the scene.";
+  
+  string $back = `promptDialog
+    -title "Points data Path"
+    -message $messages
+    -text $gCcgSE_IBL_AdvPointFilePath
+    -button "OK" -button "Cancel"
+    -defaultButton "OK" -cancelButton "Cancel"
+    -dismissString "Cancel"`;
+  if($back=="OK"){
+    string $text = fromNativePath(`promptDialog -query -text`);
+    if(`filetest -r $text`){
+      return $text;
+    }else return "";
+  }else return "";
+  
+  return "";
+}
+
+global proc ccgSE_IBL_AdvInputUvSpace()
+{
+  global int $gCcgSE_IBL_AdvUvReadingDirection;
+  
+  string $children[] = `formLayout -q -ca ccgSE_IBL_Adv_formlayout`;
+  $children = stringArrayRemove({"ccgSE_IBL_Adv_image"}, $children);
+  int $num = size($children);
+  int $i;
+  int $sel = `optionMenuGrp -q -sl ccgSE_IBL_Adv_option1` - 1;
+  for($i=0;$i<$num;$i++){
+    if(`button -q -ex $children[$i]`){
+      float $uv[2] = ccgSE_IBL_AdvGetButtonAnno($children[$i]);
+      $uv = ccgSE_IBL_AdvUVSwap($gCcgSE_IBL_AdvUvReadingDirection, $uv);
+      $uv = ccgSE_IBL_AdvUVSwap($sel, $uv);
+      ccgSE_IBL_AdvButtonUvMove($children[$i], $uv[0], $uv[1], 0);
+    }
+  }
+  $gCcgSE_IBL_AdvUvReadingDirection = $sel;
+}
+
+global proc ccgSE_IBL_AdvOutputUvSpace()
+{
+  global int $gCcgSE_IBL_AdvUvReadingDirection;
+  global int $gCcgSE_IBL_AdvUvWritingDirection;
+  
+  string $children[] = `formLayout -q -ca ccgSE_IBL_Adv_formlayout`;
+  $children = stringArrayRemove({"ccgSE_IBL_Adv_image"}, $children);
+  int $num = size($children);
+  int $i;
+  int $sel = `optionMenuGrp -q -sl ccgSE_IBL_Adv_option2` - 1;
+  for($i=0;$i<$num;$i++){
+    if(`button -q -ex $children[$i]`){
+      float $uv[2] = ccgSE_IBL_AdvGetButtonAnno($children[$i]);
+      $uv = ccgSE_IBL_AdvUVSwap($gCcgSE_IBL_AdvUvReadingDirection, $uv);
+      $uv = ccgSE_IBL_AdvUVSwap($gCcgSE_IBL_AdvUvWritingDirection, $uv);
+      $uv = ccgSE_IBL_AdvUVSwap($sel, $uv);
+      $uv = ccgSE_IBL_AdvUVSwap($gCcgSE_IBL_AdvUvReadingDirection, $uv);
+      ccgSE_IBL_AdvButtonUvMove($children[$i], $uv[0], $uv[1], 0);
+    }
+  }
+  $gCcgSE_IBL_AdvUvWritingDirection = $sel;
+}
+
+global proc ccgSE_IBL_AdvInitialLightPos()
+{
+  global vector $gCcgSE_IBL_AdvLightDefaultPos[];
+  
+  string $children[] = `formLayout -q -ca ccgSE_IBL_Adv_formlayout`;
+  $children = stringArrayRemove({"ccgSE_IBL_Adv_image"}, $children);
+  int $num = size($children);
+  int $i;
+  int $sel = `optionMenuGrp -q -sl ccgSE_IBL_Adv_option1` - 1;
+  for($i=0;$i<$num;$i++){
+    if(`button -q -ex $children[$i]` && `gmatch $children[$i] "*ccgSE_IBL_Adv_lightButton*"`){
+      int $index = int(`match "[0-9]+$" $children[$i]`);
+      float $uv[2] = ccgSE_IBL_AdvVector2UV($gCcgSE_IBL_AdvLightDefaultPos[$index]);
+      $uv = ccgSE_IBL_AdvUVSwap($sel, $uv);
+      ccgSE_IBL_AdvButtonUvMove($children[$i], $uv[0], $uv[1], 0);
+    }
+  }
+}
+
+global proc ccgSE_IBL_AdvSetIblGeoShader(string $dataPath)
+{
+  if(`objExists ccgIblGeoShader`){
+    setAttr -type "string" ccgIblGeoShader.light_points_file $dataPath;
+    setAttr ccgIblGeoShader.light_mode 2;
+  }
+}
+
+global proc int ccgSE_IBL_AdvOverwriteDatafileConfirm(string $textpath)
+{
+  global int $gCcgSE_IBL_AdvOverwriteConfirm;
+  
+  if($textpath=="") return 0;
+  
+  string $messageStr = "The following lights' data file will be overwrite:\n" + "\"" +$textpath + "\"";
+  string $confirmText = `confirmDialog -title "Confirm" -message $messageStr
+      -button "Yes" -button "Yes and don't bother me again" -button "Cancel" -defaultButton "Yes"
+      -cancelButton "Cancel" -dismissString "Cancel"`;
+  switch($confirmText){
+    case "Yes": return 1;
+    case "Yes and don't bother me again":   $gCcgSE_IBL_AdvOverwriteConfirm = 1; return 1;
+    case "Cancel":  return 0;
+  }
+  
+  return 0;
+}
+
+global proc int ccgSE_IBL_AdvSaveLightData()
+{
+  global vector $gCcgSE_IBL_AdvLightDefaultPos[];
+  global int $gCcgSE_IBL_AdvUvReadingDirection;
+  global int $gCcgSE_IBL_AdvOverwriteConfirm;
+  
+  string $text = `textFieldGrp -q -text ccgSE_IBL_Adv_datafileas`;
+  $text = fromNativePath($text);
+  if(!$gCcgSE_IBL_AdvOverwriteConfirm)
+    if(!ccgSE_IBL_AdvOverwriteDatafileConfirm($text)) return 0;
+  
+  vector $output[];
+  string $children[] = `formLayout -q -ca ccgSE_IBL_Adv_formlayout`;
+  $children = stringArrayRemove({"ccgSE_IBL_Adv_image"}, $children);
+  int $num = size($children);
+  int $i;
+  int $uvout = `optionMenuGrp -q -sl ccgSE_IBL_Adv_option2` - 1;
+  for($i=0;$i<$num;$i++){
+    if(`button -q -ex $children[$i]`){
+      if(`button -q -l $children[$i]`==""){
+        if(`gmatch $children[$i] "*ccgSE_IBL_Adv_lightButton*"`){
+          int $index = int(`match "[0-9]+$" $children[$i]`);
+          if($uvout != 0){
+            float $uv[2] = ccgSE_IBL_AdvGetButtonAnno($children[$i]);
+            $uv = ccgSE_IBL_AdvUVSwap($gCcgSE_IBL_AdvUvReadingDirection, $uv);
+            float $pos[3] = ccgSE_IBL_AdvUV2Vector($uv);
+            $output[$i] = <<ccgSE_IBL_AdvFloatDecimal($pos[0],6), ccgSE_IBL_AdvFloatDecimal($pos[1],6), ccgSE_IBL_AdvFloatDecimal($pos[2],6)>>;
+          }else {
+                  $output[$i] = $gCcgSE_IBL_AdvLightDefaultPos[$index];
+                }
+        }
+      }else if(`button -q -l $children[$i]`==" "){
+              float $uv[2] = ccgSE_IBL_AdvGetButtonAnno($children[$i]);
+              $uv = ccgSE_IBL_AdvUVSwap($gCcgSE_IBL_AdvUvReadingDirection, $uv);
+              float $pos[3] = ccgSE_IBL_AdvUV2Vector($uv);
+              $output[$i] = <<ccgSE_IBL_AdvFloatDecimal($pos[0],6), ccgSE_IBL_AdvFloatDecimal($pos[1],6), ccgSE_IBL_AdvFloatDecimal($pos[2],6)>>;
+            }
+    }
+  }
+
+  string $filePath = dirname($text);
+  string $fileName = basenameEx($text);  
+  int $fileId=`fopen $text "w"`;
+  for($i=0;$i<$num;$i++){
+    string $px = string($output[$i]);
+    fprint $fileId (string($output[$i]));
+    if($i!=$num-1) fprint $fileId "\n";
+  }
+  fclose $fileId;
+  ccgSE_IBL_AdvSetIblGeoShader($text);
+  
+  return 1;
+}
+
+global proc int ccgSE_IBL_AdvFloatSortRecursive(float $point, float $pointSets[], int $index)
+{
+  int $i,$j,$setsNum,$mid;
+  float $temp[];
+  
+  $setsNum = size($pointSets);
+  if($setsNum==1)
+    if($point<$pointSets[0]) return $index;
+    else return ($index + 1);
+  else{
+        clear $temp;
+        $mid = $setsNum/2;
+        if($setsNum%2==0)
+        {
+          if($point<$pointSets[$mid]&&$point>=$pointSets[$mid-1]) return ($index + $mid);
+          else if($point<$pointSets[$mid-1])
+                {
+                  for($i=0;$i<=$mid-1;$i++) $temp[$i] = $pointSets[$i];
+                  return ccgSE_IBL_AdvFloatSortRecursive($point, $temp, $index);
+                }else{
+                      for($i=$mid,$j=0;$i<$setsNum;$i++,$j++) $temp[$j] = $pointSets[$i];
+                      return ccgSE_IBL_AdvFloatSortRecursive($point, $temp, ($index + $mid));
+                    }
+        }else{
+                if($point>=$pointSets[$mid-1]&&$point<$pointSets[$mid]) return ($index + $mid);
+                else if($point>=$pointSets[$mid]&&$point<$pointSets[$mid+1])  return ($index + $mid + 1);
+                    else if($point<$pointSets[$mid-1])
+                          {
+                            for($i=0;$i<=$mid-1;$i++) $temp[$i] = $pointSets[$i];
+                            return ccgSE_IBL_AdvFloatSortRecursive($point, $temp, $index);
+                          }else{
+                                  for($i=$mid+1,$j=0;$i<$setsNum;$i++,$j++) $temp[$j] = $pointSets[$i];
+                                  return ccgSE_IBL_AdvFloatSortRecursive($point, $temp, ($index + $mid + 1));
+                              }
+            }
+      }
+}
+
+global proc float[] ccgSE_IBL_AdvFloatSort(float $input[], int $interval)
+{
+  int $i,$j,$k,$m,$inputNum,$orderNum,$orderIndexNum,$orderIndex[],$index;
+  float $output[],$orderArray[],$preOrderArray[];
+  
+  $inputNum = size($input);
+  if($interval == 0)
+  {
+    $output = sort($input);
+  }else
+      {
+        for($i=0,$j=0;$i<$inputNum;$i+=$interval+1,$j++)
+          $preOrderArray[$j] = $input[$i];
+        
+        if($preOrderArray[1]<$preOrderArray[0]) { $orderIndex[0]=1; $orderIndex[1]=0; $orderArray[0]=$preOrderArray[1]; $orderArray[1]=$preOrderArray[0]; }
+        else { $orderIndex[0]=0; $orderIndex[1]=1; $orderArray[0]=$preOrderArray[0]; $orderArray[1]=$preOrderArray[1]; }
+        
+        $orderNum = size($preOrderArray);
+        for($i=2;$i<$orderNum;$i++)
+        {
+          $index = ccgSE_IBL_AdvFloatSortRecursive($preOrderArray[$i], $orderArray, 0);
+          for($j=size($orderIndex);$j>$index;$j--)
+          {
+            $orderIndex[$j] = $orderIndex[$j-1];
+            $orderArray[$j] = $orderArray[$j-1];
+          }
+          $orderIndex[$index] = $i;
+          $orderArray[$index] = $preOrderArray[$i];
+        }
+        
+        $orderIndexNum = size($orderIndex);
+        for($i=0,$j=0;$i<$orderIndexNum;$i++)
+        {
+          $k = $orderIndex[$i] * ($interval + 1);
+          $output[$j] = $input[$k];
+          for($m=0,$j++,$k++;$m<$interval;$m++,$j++,$k++)
+            $output[$j] = $input[$k];
+        }
+      }
+      
+  return $output;
+}
+
+global proc string[] ccgSE_IBL_AdvSortStringByLength(string $str[])
+{
+  int $i,$j,$k,$num;
+  $num = size($str);
+  float $length[];
+  for($i=0;$i<$num;$i++){
+    $length[$j] = float(size($str[$i]));
+    $length[$j+1] = float($i);
+    $j+=2;
+  }
+  $length = ccgSE_IBL_AdvFloatSort($length, 1);
+  $num = size($length);
+  string $result[];
+  string $tmp[];
+  for($i=0,$j=0,$k=0;$i<$num;$i+=2){
+    if($length[$i]!=$length[$i+2]){
+      $tmp[$j] = $str[int($length[$i+1])];
+      $tmp = sort($tmp);
+      int $m;
+      for($m=0;$m<=$j;$m++){
+        $result[$k] = $tmp[$m];
+        $k++;
+      }
+      clear $tmp;
+      $j=0;  
+    }else{
+            $tmp[$j] = $str[int($length[$i+1])];
+            $j++;
+        }
+  }
+  
+  return $result;
+}
+
+global proc ccgSE_IBL_AdvLALockAttrTRS(string $node)
+{
+  if(`objExists $node`){
+    if(`attributeExists "translate" $node`){
+      setAttr -lock true ($node+".tx");
+      setAttr -lock true ($node+".ty");
+      setAttr -lock true ($node+".tz");
+    }
+    if(`attributeExists "rotate" $node`){
+      setAttr -lock true ($node+".rx");
+      setAttr -lock true ($node+".ry");
+      setAttr -lock true ($node+".rz");
+    }
+    if(`attributeExists "scale" $node`){
+      setAttr -lock true ($node+".sx");
+      setAttr -lock true ($node+".sy");
+      setAttr -lock true ($node+".sz");
+    }
+  }
+}
+
+global proc ccgSE_IBL_AdvUnlockAttrTRS(string $node)
+{
+  if(`objExists $node`){
+    if(`attributeExists "translate" $node`){
+      setAttr -lock false ($node+".tx");
+      setAttr -lock false ($node+".ty");
+      setAttr -lock false ($node+".tz");
+    }
+    if(`attributeExists "rotate" $node`){
+      setAttr -lock false ($node+".rx");
+      setAttr -lock false ($node+".ry");
+      setAttr -lock false ($node+".rz");
+    }
+    if(`attributeExists "scale" $node`){
+      setAttr -lock false ($node+".sx");
+      setAttr -lock false ($node+".sy");
+      setAttr -lock false ($node+".sz");
+    }
+  }
+}
+
+global proc ccgSE_IBL_AdvLAConnect(string $lightsGrp, string $lights)
+{
+  if(`objExists ccgLightArray`){
+    if(!`isConnected "ccgLightArray.light_scale" ($lightsGrp+".scaleX")`) connectAttr -f "ccgLightArray.light_scale" ($lightsGrp+".scaleX");
+    if(!`isConnected "ccgLightArray.light_scale" ($lightsGrp+".scaleY")`) connectAttr -f "ccgLightArray.light_scale" ($lightsGrp+".scaleY");
+    if(!`isConnected "ccgLightArray.light_scale" ($lightsGrp+".scaleZ")`) connectAttr -f "ccgLightArray.light_scale" ($lightsGrp+".scaleZ");
+    string $existMult[] = `listConnections -d 0 -s 1 -scn 1 ($lights+".scale")`;
+    if($existMult[0]!="" && `nodeType $existMult[0]`=="multiplyDivide"){
+      string $rightMult[] = `listConnections -d 0 -s 1 -scn 1 ($existMult[0]+".input2")`;
+      if($rightMult[0]!="ccgLightArray"){
+        string $mult = `createNode multiplyDivide`;
+        setAttr ($mult+".operation") 2;
+        setAttr ($mult+".input1") 1 1 1;
+        connectAttr -f "ccgLightArray.scale" ($mult+".input2");
+        connectAttr -f ($mult+".output") ($lights+".scale");
+      }
+    }else {
+            string $mult = `createNode multiplyDivide`;
+            setAttr ($mult+".operation") 2;
+            setAttr ($mult+".input1") 1 1 1;
+            connectAttr -f "ccgLightArray.scale" ($mult+".input2");
+            connectAttr -f ($mult+".output") ($lights+".scale");
+          }
+  }
+}
+
+global proc ccgSE_IBL_AdvLADeleteMultiply()
+{
+  string $existMult[] = `ls -type "multiplyDivide" -fl`;
+  int $num = size($existMult);
+  int $i;
+  for($i=0;$i<$num;$i++){
+    string $utility[] = `listConnections -type "defaultRenderUtilityList" $existMult[$i]`;
+    string $allConnect[] = `listConnections $existMult[$i]`;
+    string $diff[] = stringArrayRemove($utility, $allConnect);
+    if(size($diff)<=0) delete $existMult[$i];
+  }
+}
+
+global proc ccgSE_IBL_AdvLightsScriptJob(string $lights)
+{
+  int $index = int(`match "[0-9]+$" $lights`);
+  string $currentGroup = "ccgLA_group_"+string($index);
+  if(`objExists $currentGroup` && `objExists ccgLA_center`){
+    float $pos[3] = `getAttr ($currentGroup+".translate")`;
+    float $locatorPos[3] = `getAttr ("ccgLA_center.translate")`;
+    vector $dir = <<$locatorPos[0],$locatorPos[1],$locatorPos[2]>> - <<$pos[0],$pos[1],$pos[2]>>;
+    float $rot[3] = ccgSE_IBL_AdvVector2Rotate($dir);
+    setAttr ($lights+".rotate") $rot[0] $rot[1] $rot[2];
+  }
+}
+
+global proc int ccgSE_IBL_AdvBuildLightArray()
+{
+  global vector $gCcgSE_IBL_AdvLightDefaultPos[];
+  global int $gCcgSE_IBL_AdvUvReadingDirection;
+  global string $gCcgSE_IBL_AdvConvertPath;
+  global int $gCcgSE_IBL_AdvButtonSize;
+  global int $gCcgSE_IBL_AdvOverwriteConfirm;
+  
+  int $debug = 0; //for internal debug
+  
+  string $lighttype = "";
+  if(`objExists ccgLightArray`){
+    if(`objExists ccgLA_light_Shape0`) $lighttype = `nodeType ccgLA_light_Shape0`;
+  }
+  if($lighttype==""){
+    string $confirmText = `confirmDialog -title "Confirm" -message "Select light type:"
+      -button "Directional" -button "Spot" -button "Point" -button "Ambient" -defaultButton "Directional"
+      -cancelButton "Directional" -dismissString "Directional"`;
+    
+    switch($confirmText){
+      case "Directional":   $lighttype = "directionalLight";
+                            break;
+      case "Spot":          $lighttype = "spotLight";
+                            break;
+      case "Point":         $lighttype = "pointLight";
+                            break;
+      case "Ambient":       $lighttype = "ambientLight";
+                            break;
+      default:              $lighttype = "directionalLight";
+    }
+  }
+  
+  string $children[] = `formLayout -q -ca ccgSE_IBL_Adv_formlayout`;
+  $children = stringArrayRemove({"ccgSE_IBL_Adv_image"}, $children);
+  int $num = size($children);
+  if($num<=0) return 0;
+  int $i;
+  string $orig_lights[];
+  int $orig_count = 0;
+  string $edit_lights[];
+  int $edit_count = 0;
+  string $add_lights[];
+  int $add_count = 0;
+  int $left_lights[];
+  int $left_count = 0;
+  for($i=0;$i<$num;$i++){
+    if(`button -q -ex $children[$i]`){
+      if(`button -q -l $children[$i]`==""){
+        if(`gmatch $children[$i] "*ccgSE_IBL_Adv_lightButton*"`){
+          int $index = int(`match "[0-9]+$" $children[$i]`);
+          $left_lights[$left_count] = $index;
+          $left_count++;
+          $orig_lights[$orig_count] = $children[$i];
+          $orig_count++;
+        }
+      }else if(`button -q -l $children[$i]`==" "){
+              if(`gmatch $children[$i] "*ccgSE_IBL_Adv_lightButton*"`){
+                int $index = int(`match "[0-9]+$" $children[$i]`);
+                $left_lights[$left_count] = $index;
+                $left_count++;
+                $edit_lights[$edit_count] = $children[$i];
+                $edit_count++;
+              }else {
+                      $add_lights[$add_count] = $children[$i];
+                      $add_count++;
+                    }
+            }
+    }
+  }
+  $left_lights = sort($left_lights);
+  int $largest = size($gCcgSE_IBL_AdvLightDefaultPos);
+  string $tmp1[],$tmp2[],$tmp3[];
+  for($i=0;$i<$left_count;$i++)
+    $tmp1[$i] = string($left_lights[$i]);
+  for($i=0;$i<$largest;$i++)
+    $tmp2[$i] = string($i);
+  $tmp3 = stringArrayRemove($tmp1, $tmp2);
+  string $remove_lights[];
+  $num = size($tmp3);
+  for($i=0;$i<$num;$i++)
+    $remove_lights[$i] = "ccgLA_group_"+$tmp3[$i];
+    
+  if($debug){
+    print "=============================\n";
+    print "Original Lights:\n";
+    print $orig_lights;
+    print "=============================\n";
+    print "Edit Lights:\n";
+    print $edit_lights;
+    print "=============================\n";
+    print "Add Lights:\n";
+    print $add_lights;
+    print "=============================\n";
+    print "Remove Lights:\n";
+    print $remove_lights;
+    print "=============================\n";
+  }
+
+progressWindow -title "Create Light Array" -progress 0 -status "Creating: 0%" -isInterruptable true;
+progressWindow -edit -progress 1 -status ("Create root circle: 1%");
+  
+  //build light array
+  //1. build root circle
+  if(!`objExists ccgLightArray`){
+    circle -c 0 0 0 -nr 0 1 0 -sw 360 -r 1 -d 3 -ut 0 -tol 0.001 -s 8 -ch 0 -n "ccgLightArray";
+    addAttr -ln "radius" -at double -min 1 ccgLightArray;
+    setAttr -e -keyable true ccgLightArray.radius;
+    addAttr -ln "light_scale" -at double ccgLightArray;
+    setAttr -e -keyable true ccgLightArray.light_scale;
+    setAttr "ccgLightArray.radius" 10;
+    setAttr "ccgLightArray.light_scale" 1;
+    if(!`isConnected ccgLightArray.radius ccgLightArray.scaleX`) connectAttr -f ccgLightArray.radius ccgLightArray.scaleX;
+    if(!`isConnected ccgLightArray.radius ccgLightArray.scaleY`) connectAttr -f ccgLightArray.radius ccgLightArray.scaleY;
+    if(!`isConnected ccgLightArray.radius ccgLightArray.scaleZ`) connectAttr -f ccgLightArray.radius ccgLightArray.scaleZ;
+    setAttr -k off -lock true ccgLightArray.scaleX;
+    setAttr -k off -lock true ccgLightArray.scaleY;
+    setAttr -k off -lock true ccgLightArray.scaleZ;
+  }
+progressWindow -edit -progress 5 -status ("Create texture preview: 5%");
+  //2. build texture preview
+  if(!`objExists ccgLA_texture_Preview`){
+    sphere -p 0 0 0 -ax 0 1 0 -ch 1 -n "ccgLA_texture_Preview";
+    string $reverseNode[] = `reverseSurface -d 3 -ch 1 -rpo 1 "ccgLA_texture_Preview"`;
+    setAttr ($reverseNode[1]+".direction") 3;
+    if(!`objExists ccgLA_texture_preview_lambert`){
+      shadingNode -asShader lambert -n ccgLA_texture_preview_lambert;
+      string $shadingEngine = `sets -renderable true -noSurfaceShader true -empty`;
+      connectAttr -f ccgLA_texture_preview_lambert.outColor ($shadingEngine+".surfaceShader");
+      sets -e -fe $shadingEngine ccgLA_texture_Preview;
+      //create texture
+      string $files = `shadingNode -asTexture file`;
+      string $place = `shadingNode -asUtility place2dTexture`;
+      connectAttr -f ($place+".coverage") ($files+".coverage");
+      connectAttr -f ($place+".translateFrame") ($files+".translateFrame");
+      connectAttr -f ($place+".rotateFrame") ($files+".rotateFrame");
+      connectAttr -f ($place+".mirrorU") ($files+".mirrorU");
+      connectAttr -f ($place+".mirrorV") ($files+".mirrorV");
+      connectAttr -f ($place+".stagger") ($files+".stagger");
+      connectAttr -f ($place+".wrapU") ($files+".wrapU");
+      connectAttr -f ($place+".wrapV") ($files+".wrapV");
+      connectAttr -f ($place+".repeatUV") ($files+".repeatUV");
+      connectAttr -f ($place+".offset") ($files+".offset");
+      connectAttr -f ($place+".rotateUV") ($files+".rotateUV");
+      connectAttr -f ($place+".noiseUV") ($files+".noiseUV");
+      connectAttr -f ($place+".vertexUvOne") ($files+".vertexUvOne");
+      connectAttr -f ($place+".vertexUvTwo") ($files+".vertexUvTwo");
+      connectAttr -f ($place+".vertexUvThree") ($files+".vertexUvThree");
+      connectAttr -f ($place+".vertexCameraOne") ($files+".vertexCameraOne");
+      connectAttr ($place+".outUV") ($files+".uv");
+      connectAttr ($place+".outUvFilterSize") ($files+".uvFilterSize");
+      connectAttr -force ($files+".outColor") "ccgLA_texture_preview_lambert.color";
+    }else {
+            string $engine[] = `listConnections -d 1 -s 0 -scn 0 -type "shadingEngine" ccgLA_texture_preview_lambert`;
+            if(size($engine)==1){
+              sets -e -fe $engine[0] ccgLA_texture_Preview;
+            }
+          }
+    parent "ccgLA_texture_Preview" "ccgLightArray";
+    setAttr "ccgLA_texture_Preview.scale" 0.9 0.9 0.9;
+    ccgSE_IBL_AdvLALockAttrTRS("ccgLA_texture_Preview");
+  }
+  string $textfile[] = `listConnections -d 0 -s 1 -scn 1 -type "file" ccgLA_texture_preview_lambert.color`;
+  if(size($textfile)==1){
+    setAttr -type "string" ($textfile[0]+".fileTextureName") $gCcgSE_IBL_AdvConvertPath;
+  }
+progressWindow -edit -progress 12 -status ("Delete locator and scriptJob: 12%");
+  //3. delete locator
+  if(`objExists ccgLA_center`) delete ccgLA_center;
+progressWindow -edit -progress 15 -status ("Initial exist lights array: 15%");
+  //build original lights if necessary
+  int $uvout = `optionMenuGrp -q -sl ccgSE_IBL_Adv_option2` - 1;
+  int $index;
+  float $uv[2],$pos[3],$dir[3];
+  string $totalLights[],$totalLightsGrp[];
+  string $currentLightGrp, $currentLight;
+  int $num_children = size($children);
+  if($debug){
+    print "=================================\n";
+    print "Build original lights if necessary\n";
+  }
+  int $num_previous = size($gCcgSE_IBL_AdvLightDefaultPos);
+  for($i=0;$i<$num_previous;$i++){
+    $currentLightGrp = "ccgLA_group_" + $i;
+    $currentLight = "ccgLA_light_" + $i;
+    //$uv = ccgSE_IBL_AdvGetButtonAnno($children[$i]);
+    //$uv = ccgSE_IBL_AdvUVSwap($gCcgSE_IBL_AdvUvReadingDirection, $uv);
+    //$pos = ccgSE_IBL_AdvUV2Vector($uv);
+    vector $tmp = $gCcgSE_IBL_AdvLightDefaultPos[$i];
+    $pos = {$tmp.x, $tmp.y, $tmp.z};
+    if($debug){
+      print ($currentLightGrp+"\n");
+      print $uv; print "\n";
+      print $pos; print "\n";
+    }
+    if(!`objExists $currentLightGrp`){
+      group -em -n $currentLightGrp;
+      parent $currentLightGrp "ccgLightArray";
+    }
+    setAttr ($currentLightGrp+".translate") $pos[0] $pos[1] $pos[2];
+    setAttr ($currentLightGrp+".rotate") 0 0 0;
+    if(!`objExists $currentLight`){
+      $lightcmd = $lighttype + " -n "+$currentLight;
+      eval($lightcmd);
+      parent $currentLight $currentLightGrp;
+    }
+    $dir = ccgSE_IBL_AdvVector2Rotate(<<-$pos[0],-$pos[1],-$pos[2]>>);
+    setAttr ($currentLight+".rotate") $dir[0] $dir[1] $dir[2];
+    setAttr ($currentLight+".translate") 0 0 0;
+    ccgSE_IBL_AdvLAConnect($currentLightGrp, $currentLight);
+  }
+  if($debug){
+    print "Build original lights if necessary -- END\n";
+  }
+progressWindow -edit -progress 25 -status ("Edit exist lights array: 25%");
+  //4. edit light position
+  if($debug){
+    print "=================================\n";
+    print "Edit light position\n";
+  }
+  int $index_total=0;
+  for($i=0;$i<$edit_count;$i++){
+    $index = int(`match "[0-9]+$" $edit_lights[$i]`);
+    $currentLightGrp = "ccgLA_group_" + string($index);
+    $totalLights[$index_total] = "ccgLA_light_" + string($index);
+    $totalLightsGrp[$index_total] = "ccgLA_group_" + string($index);
+    $index_total++;
+    if(`objExists $currentLightGrp`){
+      $uv = ccgSE_IBL_AdvGetButtonAnno($edit_lights[$i]);
+      $uv = ccgSE_IBL_AdvUVSwap($gCcgSE_IBL_AdvUvReadingDirection, $uv);
+      $pos = ccgSE_IBL_AdvUV2Vector($uv);
+      if($debug){
+        print ($currentLightGrp+"\n");
+        print $uv; print "\n";
+        print $pos; print "\n";
+      }
+      setAttr ($currentLightGrp+".translate") $pos[0] $pos[1] $pos[2];
+      setAttr ($currentLightGrp+".rotate") 0 0 0;
+      $dir = ccgSE_IBL_AdvVector2Rotate(<<-$pos[0],-$pos[1],-$pos[2]>>);
+      $currentLight = "ccgLA_light_" + string($index);
+      if(`objExists $currentLight`){
+        setAttr ($currentLight+".rotate") $dir[0] $dir[1] $dir[2];
+        setAttr ($currentLight+".translate") 0 0 0;
+      }
+    }
+  }
+  if($debug){
+    print "Edit light position -- END\n";
+  }
+  string $lightcmd;
+progressWindow -edit -progress 38 -status ("Add new lights: 38%");
+  //5. add light
+  if($debug){
+    print "=================================\n";
+    print "Add light\n";
+  }
+  int $j;
+  for($i=0,$j=$largest;$i<$add_count;$i++,$j++)
+  {
+    $currentLightGrp = "ccgLA_group_" + string($j);
+    $currentLight = "ccgLA_light_" + string($j);
+    $uv = ccgSE_IBL_AdvGetButtonAnno($add_lights[$i]);
+    $uv = ccgSE_IBL_AdvUVSwap($gCcgSE_IBL_AdvUvReadingDirection, $uv);
+    $pos = ccgSE_IBL_AdvUV2Vector($uv);
+    if($debug){
+      print ($currentLightGrp+"\n");
+      print $uv; print "\n";
+      print $pos; print "\n";
+    }
+    $totalLights[$index_total] = $currentLight;
+    $totalLightsGrp[$index_total] = $currentLightGrp;
+    $index_total++;
+    if(!`objExists $currentLightGrp`){
+      group -em -n $currentLightGrp;
+      parent $currentLightGrp "ccgLightArray";
+      setAttr ($currentLightGrp+".translate") $pos[0] $pos[1] $pos[2];
+      setAttr ($currentLightGrp+".rotate") 0 0 0;
+    }
+    if(!`objExists $currentLight`){
+      $lightcmd = $lighttype + " -n "+$currentLight;
+      eval($lightcmd);
+      parent $currentLight $currentLightGrp;
+      $dir = ccgSE_IBL_AdvVector2Rotate(<<-$pos[0],-$pos[1],-$pos[2]>>);
+      setAttr ($currentLight+".rotate") $dir[0] $dir[1] $dir[2];
+      setAttr ($currentLight+".translate") 0 0 0;
+    }
+    ccgSE_IBL_AdvLAConnect($currentLightGrp, $currentLight);
+  }
+  if($debug){
+    print "Add light -- END\n";
+  }
+progressWindow -edit -progress 45 -status ("Move exist lights array: 45%");
+  //6. move original light if necessary
+  if($debug){
+    print "=================================\n";
+    print "Move original light if necessary\n";
+  }
+  for($i=0;$i<$orig_count;$i++){
+    $index = int(`match "[0-9]+$" $orig_lights[$i]`);
+    $currentLightGrp = "ccgLA_group_" + string($index);
+    $totalLights[$index_total] = "ccgLA_light_" + string($index);
+    $totalLightsGrp[$index_total] = "ccgLA_group_" + string($index);
+    $index_total++;
+    if($uvout!=0){
+      if(`objExists $currentLightGrp`){
+        $uv = ccgSE_IBL_AdvGetButtonAnno($orig_lights[$i]);
+        $uv = ccgSE_IBL_AdvUVSwap($gCcgSE_IBL_AdvUvReadingDirection, $uv);
+        $pos = ccgSE_IBL_AdvUV2Vector($uv);
+        if($debug){
+          print ($currentLightGrp+"\n");
+          print $uv; print "\n";
+          print $pos; print "\n";
+        }
+        setAttr ($currentLightGrp+".translate") $pos[0] $pos[1] $pos[2];
+        setAttr ($currentLightGrp+".rotate") 0 0 0;
+        $dir = ccgSE_IBL_AdvVector2Rotate(<<-$pos[0],-$pos[1],-$pos[2]>>);
+        $currentLight = "ccgLA_light_" + string($index);
+        if(`objExists $currentLight`){
+          setAttr ($currentLight+".rotate") $dir[0] $dir[1] $dir[2];
+          setAttr ($currentLight+".translate") 0 0 0;
+        }
+      }
+    }
+  }
+  if($debug){
+    print "Move original light if necessary -- END\n";
+  }
+progressWindow -edit -progress 55 -status ("Remove lights: 55%");
+  //7. remove light
+  if($debug){
+    print "=================================\n";
+    print "Remove light\n";
+  }
+  int $remove_count = size($remove_lights);
+  for($i=0;$i<$remove_count;$i++){
+    $index = int(`match "[0-9]+$" $remove_lights[$i]`);
+    $currentLight = "ccgLA_light_" + string($index);
+    if(`objExists $currentLight`){
+      string $mult[] = `listConnections -d 0 -s 1 -scn 1 ($currentLight+".scale")`;
+      if($mult[0]!="" && `nodeType $mult[0]`=="multiplyDivide") delete $mult[0];
+      delete $currentLight;
+      if($debug) print ($currentLight+"\n");
+    }
+    if(`objExists $remove_lights[$i]`){
+      delete $remove_lights[$i];
+      if($debug) print ($remove_lights[$i]+"\n");
+    }
+  }
+  if($debug){
+    print "Remove light -- END\n";
+  }
+progressWindow -edit -progress 60 -status ("Rename lights: 60%");
+  //8. rename light and output light position to global variable
+  $totalLights = ccgSE_IBL_AdvSortStringByLength($totalLights);
+  $totalLightsGrp = ccgSE_IBL_AdvSortStringByLength($totalLightsGrp);
+  clear $gCcgSE_IBL_AdvLightDefaultPos;
+  if($debug){
+    print "=================================\n";
+    print "Rename light and output light position to global variable\n";
+  }
+  for($i=0;$i<$index_total;$i++){
+    $currentLight = "ccgLA_light_" + string($i);
+    $currentLightGrp = "ccgLA_group_" + string($i);
+    $pos = `getAttr ($totalLightsGrp[$i]+".translate")`;
+    if($debug){
+      print ($currentLightGrp+"\n");
+      print $pos; print "\n";
+    }
+    $gCcgSE_IBL_AdvLightDefaultPos[$i] = <<$pos[0], $pos[1], $pos[2]>>;
+    if($totalLights[$i]!=$currentLight){
+      if(`objExists $totalLights[$i]`) rename $totalLights[$i] $currentLight;
+      if(`objExists $totalLightsGrp[$i]`) rename $totalLightsGrp[$i] $currentLightGrp;
+    }
+  }
+  if($debug){
+    print "Rename light and output light position to global variable -- END\n";
+  }
+progressWindow -edit -progress 62 -status ("Sample lights color: 62%");
+  //sample color
+  string $ext = fileExtension($gCcgSE_IBL_AdvConvertPath);
+  $ext = tolower($ext);
+  if($ext=="hdr"){
+    string $scriptPath = `getenv "MAYA_SCRIPT_PATH"`;
+    string $scriptTok[];
+    tokenize $scriptPath ";" $scriptTok;
+    string $valid_scriptpath = "";
+    for($i=0;$i<size($scriptTok);$i++){
+      if(`filetest -r ($scriptTok[$i]+"/hdr_read.exe")`){
+        $valid_scriptpath = $scriptTok[$i]+"/hdr_read.exe";
+        break;
+      }
+    }
+    if($valid_scriptpath==""){
+      confirmDialog -title "Warning" -message "Can't find hdr_read.exe in MAYA_SCRIPT_PATH, You should get it with this mel script.\nUse internal mel command as an alternative for retrieving RGB value.\nThe RGB value returned by internal mel command never exceed 1, which of course defeat the feature of HDRI.\nAnyway, the process will go on."
+                    -button "D'oh!" -defaultButton "D'oh!" -cancelButton "D'oh!" -dismissString "D'oh!";
+      $ext = "bmp";
+    }else{
+            string $queryFile = dirname($valid_scriptpath) + "/queryTextTempFile.txt";
+            if(`gmatch $queryFile "* *"`) $queryFile = "C:/queryTextTempFile.txt";
+            int $fileId=`fopen $queryFile "w"`;
+            for($i=0;$i<$index_total;$i++){
+              float $uv[2] = ccgSE_IBL_AdvVector2UV($gCcgSE_IBL_AdvLightDefaultPos[$i]);
+              $uv = ccgSE_IBL_AdvUVSwap($gCcgSE_IBL_AdvUvReadingDirection, $uv);
+              fprint $fileId ($uv[0] + " " + $uv[1]);
+              if($i!=$index_total-1) fprint $fileId "\n";
+            }
+            fclose $fileId;
+            string $hdrPath = $gCcgSE_IBL_AdvConvertPath;
+            if(`gmatch $hdrPath "* *"`){
+              $hdrPath = "C:/ccgHdrTemp.hdr";
+              sysFile -copy $hdrPath $gCcgSE_IBL_AdvConvertPath;
+            }
+            string $rgbFile = dirname($valid_scriptpath) + "/queryHdrImageRGBInfo.txt";
+            if(`gmatch $rgbFile "* *"`) $rgbFile = "C:/queryHdrImageRGBInfo.txt";
+            system("\""+$valid_scriptpath+"\" "+$hdrPath+" /Q:"+$queryFile+" /O:"+$rgbFile);
+            sysFile -delete $queryFile;
+            if(`gmatch $hdrPath "*C:/ccgHdrTemp.hdr*"`) sysFile -delete $hdrPath;
+            $fileId = `fopen $rgbFile "r"`;
+            vector $rgbe[];
+            $i=0;
+            string $tok[];
+            string $nextLine = `fgetline $fileId`;
+            while ( size( $nextLine ) > 0 ) {
+              tokenize $nextLine " " $tok;
+              $rgbe[$i] = <<float($tok[0]), float($tok[1]), float($tok[2])>>;
+              $i++;
+              $nextLine = `fgetline $fileId`;
+            }
+            fclose $fileId;
+            sysFile -delete $rgbFile;
+            float $color[3];
+            for($i=0;$i<$index_total;$i++){
+              vector $tmp = $rgbe[$i];
+              $color[0] = $tmp.x;
+              $color[1] = $tmp.y;
+              $color[2] = $tmp.z;
+              if(`objExists ("ccgLA_light_"+$i)`) setAttr ("ccgLA_light_"+$i+".color") -type double3 $color[0] $color[1] $color[2];
+            }
+        }
+  }
+  if($ext!="hdr"){
+    string $sampleFilePath = `getenv MAYA_LOCATION` + "/icons/ccgSE_IBL_AdvTmp.bmp";
+    string $sampleFileNode = `shadingNode -asTexture file`;
+    setAttr -type "string" ($sampleFileNode+".fileTextureName") $sampleFilePath;
+    float $color[3], $uv[2];
+    for($i=0;$i<$index_total;$i++){
+      $uv = ccgSE_IBL_AdvVector2UV($gCcgSE_IBL_AdvLightDefaultPos[$i]);
+      $uv = ccgSE_IBL_AdvUVSwap($gCcgSE_IBL_AdvUvReadingDirection, $uv);
+      $color = `colorAtPoint -o "RGB" -u $uv[0] -v $uv[1] $sampleFileNode`;
+      if(`objExists ("ccgLA_light_"+$i)`) setAttr ("ccgLA_light_"+$i+".color") -type double3 $color[0] $color[1] $color[2];
+    }
+    delete $sampleFileNode;
+  }
+
+progressWindow -edit -progress 97 -status ("Rebuild buttons: 97%");
+  //rebuild button
+  string $buttonName;
+  $num = size($children);
+  for($i=0;$i<$num;$i++){
+    if(`button -q -ex $children[$i]`) deleteUI -ctl $children[$i];
+  }
+  for($i=0;$i<$index_total;$i++){
+    $buttonName = `button -p "ccgSE_IBL_Adv_formlayout" -w $gCcgSE_IBL_AdvButtonSize -h $gCcgSE_IBL_AdvButtonSize -rs 0 -bgc 0.004 0.569 0.965 -l "" -dgc "ccgSE_IBL_AdvButtonDrag" ("ccgSE_IBL_Adv_lightButton"+$i)`;
+    button -e -c ("ccgSE_IBL_AdvButtonUvEditor(\""+$buttonName+"\")") $buttonName;
+  }
+  ccgSE_IBL_AdvInitialLightPos();
+  ccgSE_IBL_AdvRefreshImageControl();
+progressWindow -edit -progress 99 -status ("Create locator and scriptJob: 99%");
+progressWindow -endProgress;
+
+  //write points data file
+  string $datapath = `textFieldGrp -q -text ccgSE_IBL_Adv_datafileas`;
+  $datapath = fromNativePath($datapath);
+  if($gCcgSE_IBL_AdvOverwriteConfirm || ccgSE_IBL_AdvOverwriteDatafileConfirm($datapath)){
+    if($datapath!=""){
+      int $fileId=`fopen $datapath "w"`;
+      $num = size($gCcgSE_IBL_AdvLightDefaultPos);
+      for($i=0;$i<$num;$i++){
+        fprint $fileId (string($gCcgSE_IBL_AdvLightDefaultPos[$i]));
+        if($i!=$num-1) fprint $fileId "\n";
+      }
+      fclose $fileId;
+    }
+  }
+  
+  //build locator
+  if(!`objExists ccgLA_center`){
+    spaceLocator -p 0 0 0 -n ccgLA_center; 
+    parent "ccgLA_center" "ccgLightArray";
+    string $scriptJobCmd;
+    for($i=0;$i<$index_total;$i++){
+      $scriptJobCmd += "ccgSE_IBL_AdvLightsScriptJob(\"ccgLA_light_"+$i+"\");";
+    }
+    scriptJob -ac "ccgLA_center.translate" $scriptJobCmd;
+  }
+  
+  return 1;
+}
+
+global proc ccgSE_IBL_AdvDeleteRealLights()
+{
+  if(`objExists ccgLightArray`){
+    string $child[] = `listRelatives -c -ad -pa -type "transform" ccgLightArray`;
+    $child = stringArrayRemove({"ccgLA_texture_Preview"},$child);
+    int $i;
+    int $num = size($child);
+    for($i=0;$i<$num;$i++){
+      if(`objExists $child[$i]`) delete $child[$i];
+    }
+  }
+}
+
+global proc int ccgSE_IBL_AdvReadPosition(string $readpath)
+{
+  global vector $gCcgSE_IBL_AdvLightDefaultPos[];
+  global int $gCcgSE_IBL_AdvButtonSize;
+  
+  if($readpath=="")
+    $readpath = `textFieldButtonGrp -q -text ccgSE_IBL_Adv_datafileread`;
+  $readpath = fromNativePath($readpath);
+  
+  if(`filetest -r $readpath`){
+    vector $tmp[];
+    int $fileId=`fopen $readpath "r"`;
+    int $i=0;
+    string $nextLine = `fgetline $fileId`;
+    while ( size( $nextLine ) > 0 ) {
+        float $pos[3] = ccgSE_IBL_AdvString2Float($nextLine);
+        $tmp[$i] = <<$pos[0], $pos[1], $pos[2]>>;
+        $i++;
+        $nextLine = `fgetline $fileId`;
+    }
+    fclose $fileId;
+    if(`size $tmp`>0){
+      string $confirmtxt = `confirmDialog -title "Warning" -message "This operation will remove current lights! Continue anyway?"
+                            -button "Yes" -button "Cancel" -defaultButton "Yes" -cancelButton "Cancel" -dismissString "Cancel"`;
+      if($confirmtxt=="Cancel") return 0;
+      ccgSE_IBL_AdvDeleteRealLights();
+      string $children[] = `formLayout -q -ca ccgSE_IBL_Adv_formlayout`;
+      $children = stringArrayRemove({"ccgSE_IBL_Adv_image"}, $children);
+      int $num = size($children);
+      for($i=0;$i<$num;$i++){
+        if(`button -q -ex $children[$i]`) deleteUI -ctl $children[$i];
+      }
+      $num = size($tmp);
+      clear $gCcgSE_IBL_AdvLightDefaultPos;
+      for($i=0;$i<$num;$i++){
+        $gCcgSE_IBL_AdvLightDefaultPos[$i] = $tmp[$i];
+        $buttonName = `button -p "ccgSE_IBL_Adv_formlayout" -w $gCcgSE_IBL_AdvButtonSize -h $gCcgSE_IBL_AdvButtonSize -rs 0 -bgc 0.004 0.569 0.965 -l "" -dgc "ccgSE_IBL_AdvButtonDrag" ("ccgSE_IBL_Adv_lightButton"+$i)`;
+        button -e -c ("ccgSE_IBL_AdvButtonUvEditor(\""+$buttonName+"\")") $buttonName;
+      }
+      ccgSE_IBL_AdvInitialLightPos();
+      ccgSE_IBL_AdvRefreshImageControl();
+      ccgSE_IBL_AdvButtonCount();
+    }
+  }
+  
+  return 0;
+}
+
+global proc int ccgSE_IBL_AdvSeed()
+{ 
+  int $numOfLight = `intFieldGrp -q -value1 ccgSE_IBL_Adv_intfieldgrp1`;
+  if($numOfLight<=0) return 0;
+  
+  string $scriptPath = `getenv "MAYA_SCRIPT_PATH"`;
+  string $scriptTok[];
+  tokenize $scriptPath ";" $scriptTok;
+  string $valid_scriptpath = "";
+  for($i=0;$i<size($scriptTok);$i++){
+    if(`filetest -r ($scriptTok[$i]+"/points_on_sphere.exe")`){
+      $valid_scriptpath = $scriptTok[$i]+"/points_on_sphere.exe";
+      break;
+    }
+  }
+  if($valid_scriptpath=="") return 0;
+  system("\""+$valid_scriptpath+"\""+" "+$numOfLight+" 500 0 "+"C:/ccgTempPoints");
+  ccgSE_IBL_AdvReadPosition("C:/ccgTempPoints");
+  sysFile -delete "C:/ccgTempPoints";
+  return 1;
+}
+
+global proc int ccgSE_IBL_AdvWindow(int $res)
+{ 
+  global vector $gCcgSE_IBL_AdvLightDefaultPos[];
+  clear $gCcgSE_IBL_AdvLightDefaultPos;
+  global float $gCcgSE_IBL_AdvButtonColors[];
+  clear $gCcgSE_IBL_AdvButtonColors;
+  global int $gCcgSE_IBL_AdvButtonSize = 10;
+  global int $gCcgSE_IBL_AdvCanvasSize;
+  global string $gCcgSE_IBL_AdvConvertPath;
+  global string $gCcgSE_IBL_AdvPointFilePath;
+  global string $gCcgSE_IBL_AdvImagePath = "";
+  global int $gCcgSE_IBL_AdvUvReadingDirection = 0;
+  global int $gCcgSE_IBL_AdvUvWritingDirection = 0;
+  global int $gCcgSE_IBL_AdvOverwriteConfirm = 0;
+  
+  int $function;
+  //function 1 for light array, 2 for geo light array
+  
+  if((`objExists ccgLightArray` && `objExists ccgIblGeoInst`) || (!`objExists ccgLightArray` && !`objExists ccgIblGeoInst`)){
+    string $confirmtext = `confirmDialog -title "Confirm" -message "This advanced editor can be used to either build lights array in the scene, or generate lights' position data for ccg_geo_ibl geometry shader.\nYou should avoid to use both in the same time."
+                            -button "Build lights array" -button "Generate lights' position data" -button "Cancel"
+                            -cancelButton "Cancel" -dismissString "Cancel"`;
+    switch($confirmtext){
+      case "Build lights array":              $function = 1;
+                                              break;
+      case "Generate lights' position data":  $function = 2;
+                                              break;
+      case "Cancel":                          $function = 0;
+                                              break;
+    }
+  }else if(`objExists ccgLightArray`) $function = 1;
+        else if(`objExists ccgIblGeoInst`) $function = 2;
+  if($function==0) return 0;
+  
+  string $files[];
+  $files[2] = "0";
+  if($function==2) $files = ccgSE_IBL_AdvFindTexture();
+  else if($function==1) {
+          if(`objExists ccgLA_texture_preview_lambert`){
+            string $textfile[] = `listConnections -d 0 -s 1 -scn 1 -type "file" ccgLA_texture_preview_lambert.color`;
+            if(size($textfile)==1){
+              //setAttr -type "string" file1.fileTextureName "";
+              $files[0] = `getAttr ($textfile[0]+".fileTextureName")`;
+              if(`filetest -r $files[0]`){
+                $files[1] = ccgSE_IBL_AdvPointsPromptWin();
+                $files[2] = "1";
+              }
+            }
+          }
+        }
+  
+  if($files[2]=="0"){
+    $files[0] = ccgSE_IBL_AdvTexturePromptWin();
+    //$files[0] = "F:/projects/maya/projects/default/sourceimages/empty_kitchen_pano_small.hdr";
+    if($files[0]=="") return 0;
+    $files[1] = ccgSE_IBL_AdvPointsPromptWin();
+    //$files[1] = "F:/projects/maya/projects/default/scenes/points100";
+    $files[2] = "1";
+  }
+  
+  progressWindow -title "Converting and Resizing Texture" -progress 0 -status "Converting: 0%" -isInterruptable false;
+  progressWindow -edit -progress 1 -status ("Converting: 1%");
+  //convert texture
+  int $resolution;
+  if($res==1) $resolution = 512;
+  else if($res==2) $resolution = 1024;
+  else if($res==3) $resolution = 2048;
+  if(!ccgSE_IBL_AdvIsRightExt(`fileExtension $files[0]`)){
+    ccgSE_IBL_AdvErrorWin(2);
+    return 0;
+  }
+  string $cvtPath = "\"" + `getenv MAYA_LOCATION` + "/bin/imgcvt.exe\"";
+  string $imgIn = `getenv MAYA_LOCATION` + "/icons/ccgSE_IBL_AdvTmp.bmp";
+  if($gCcgSE_IBL_AdvConvertPath!=$files[0] || $gCcgSE_IBL_AdvCanvasSize!=$resolution){
+    if(tolower(`fileExtension $files[0]`)!="bmp"){
+      system("imgcvt.exe " + "\"" + $files[0] + "\" \"" + $imgIn + "\"");
+    }else sysFile -copy $imgIn $files[0];
+  }
+  if(!`filetest -r $imgIn`){
+    ccgSE_IBL_AdvErrorWin(4);
+    return 0;
+  }
+  progressWindow -edit -progress 50 -status ("Resizing: 50%");
+  //resize texture
+  $cvtPath = "\"" + `getenv MAYA_LOCATION` + "/bin/imconvert.exe\"";
+  string $imgOut = `getenv MAYA_LOCATION` + "/icons/ccgSE_IBL_AdvTmp_resize.bmp";
+  if($gCcgSE_IBL_AdvConvertPath!=$files[0] || $gCcgSE_IBL_AdvCanvasSize!=$resolution)
+    system("imconvert.exe " + "\"" + $imgIn + "\" -resize "+$resolution+"x"+$resolution+"! \"" + $imgOut + "\"");
+  if(!`filetest -r $imgOut`){
+    ccgSE_IBL_AdvErrorWin(5);
+    return 0;
+  }
+  
+  $gCcgSE_IBL_AdvCanvasSize = $resolution;
+  $gCcgSE_IBL_AdvConvertPath = $files[0];
+  $gCcgSE_IBL_AdvImagePath = $imgOut;
+  
+  progressWindow -endProgress;
+  
+  //read points
+  if(($function==2 || $files[1]!="") && `filetest -r $files[1]`){
+    int $fileId=`fopen $files[1] "r"`;
+    int $i=0;
+    string $nextLine = `fgetline $fileId`;
+    while ( size( $nextLine ) > 0 ) {
+        float $pos[3] = ccgSE_IBL_AdvString2Float($nextLine);
+        $gCcgSE_IBL_AdvLightDefaultPos[$i] = <<$pos[0], $pos[1], $pos[2]>>;
+        $i++;
+        $nextLine = `fgetline $fileId`;
+    }
+    fclose $fileId;
+  }else if($function==1){
+          if(`objExists ccgLightArray`){
+            string $childrenList[] = `listRelatives -ad -pa -type "transform" ccgLightArray`;
+            int $i,$j,$numchild;
+            $numchild = size($childrenList);
+            string $lights[];
+            for($i=0;$i<$numchild;$i++){
+              if(`gmatch $childrenList[$i] "*ccgLA_group_*"`){
+                $lights[$j] = $childrenList[$i];
+                $j++;
+              }
+            }
+            $numchild = size($lights);
+            $lights = ccgSE_IBL_AdvSortStringByLength($lights);
+            for($i=0;$i<$numchild;$i++){
+              float $pos[3] = `getAttr ($lights[$i]+".translate")`;
+              normalize($pos);
+              $gCcgSE_IBL_AdvLightDefaultPos[$i] = <<$pos[0], $pos[1], $pos[2]>>;
+            }
+          }else {
+                  if(`filetest -r $files[1]`){
+                    int $fileId=`fopen $files[1] "r"`;
+                    int $i=0;
+                    string $nextLine = `fgetline $fileId`;
+                    while ( size( $nextLine ) > 0 ) {
+                        float $pos[3] = ccgSE_IBL_AdvString2Float($nextLine);
+                        $gCcgSE_IBL_AdvLightDefaultPos[$i] = <<$pos[0], $pos[1], $pos[2]>>;
+                        $i++;
+                        $nextLine = `fgetline $fileId`;
+                    }
+                    fclose $fileId;
+                  }
+                }
+        }
+  $gCcgSE_IBL_AdvPointFilePath = $files[1];
+
+  if(`windowPref -exists ccgSE_IBL_Adv_Window`) windowPref -e -w $resolution -h $resolution ccgSE_IBL_Adv_Window;
+  if(`window -exists ccgSE_IBL_Adv_Window`) deleteUI ccgSE_IBL_Adv_Window;
+  window -t "IBL Advanced Editor" -in "IBL AdvEditor" -rtf true -s 0 ccgSE_IBL_Adv_Window;
+  columnLayout -adj 1 ccgSE_IBL_Adv_column0;
+  paneLayout -w $resolution -h $resolution  -cn "single" -aft 0 ccgSE_IBL_Adv_panelayout1;
+    formLayout -nd 2048 -dgc "ccgSE_IBL_AdvformlayoutDrag" -dpc "ccgSE_IBL_AdvformlayoutDrop" ccgSE_IBL_Adv_formlayout;
+      int $i;
+      int $lightsNum = size($gCcgSE_IBL_AdvLightDefaultPos);
+      for($i=0;$i<$lightsNum;$i++){
+        string $buttonName = `button -w $gCcgSE_IBL_AdvButtonSize -h $gCcgSE_IBL_AdvButtonSize -rs 0 -bgc 0.004 0.569 0.965 -l "" -dgc "ccgSE_IBL_AdvButtonDrag" ("ccgSE_IBL_Adv_lightButton"+$i)`;
+        button -e -c ("ccgSE_IBL_AdvButtonUvEditor(\""+$buttonName+"\")") $buttonName;
+      }
+      image -en 0 -image $imgOut ccgSE_IBL_Adv_image;
+      formLayout -e
+        -attachForm ccgSE_IBL_Adv_image "top" 0
+        -attachForm ccgSE_IBL_Adv_image "left" 0
+        -attachForm ccgSE_IBL_Adv_image "right" 0
+        -attachForm ccgSE_IBL_Adv_image "bottom" 0
+      ccgSE_IBL_Adv_formlayout;
+  setParent ccgSE_IBL_Adv_column0;
+  separator;
+  frameLayout -l "Advanced Controls" -cl 0 -cll 1 -bs "etchedIn" ccgSE_IBL_Adv_framelayout;
+  columnLayout -adj 1 ccgSE_IBL_Adv_column1;
+  text -l " Move:MMB    Add:Shift+MMB    Delete:Ctrl+MMB" -rs 0 -al "left";
+  separator;
+  rowColumnLayout -nr 1 -rh 1 15 ccgSE_IBL_Adv_rowcolumn1;
+    colorSliderGrp -l " Original Lights:" -rgb 0.004 0.569 0.965 -cw 1 85 -cw 2 60 -cw 3 60 -cc ("ccgSE_IBL_AdvButtonColorChanged(0,`colorSliderGrp -q -rgb ccgSE_IBL_Adv_canvasOrig`)") ccgSE_IBL_Adv_canvasOrig;
+    colorSliderGrp -l "    Changed Lights:" -rgb 0.996 0.348 0.485 -cw 1 130 -cw 2 60 -cw 3 60 -cc ("ccgSE_IBL_AdvButtonColorChanged(1,`colorSliderGrp -q -rgb ccgSE_IBL_Adv_canvasChanged`)") ccgSE_IBL_Adv_canvasChanged;
+    $gCcgSE_IBL_AdvButtonColors = {0.996,0.348,0.485};
+  setParent ccgSE_IBL_Adv_column1;
+  separator -vis 1 ccgSE_IBL_Adv_separator1;
+  rowColumnLayout -nr 1 ccgSE_IBL_Adv_rowcolumn2;
+  optionMenuGrp -l " UV Input Direction: " -adj 2 -cw 1 110 -cc "ccgSE_IBL_AdvInputUvSpace()" ccgSE_IBL_Adv_option1;
+    menuItem -l "No Change"   ccgSE_IBL_Adv_menu_1;
+    menuItem -l "Reverse U"   ccgSE_IBL_Adv_menu_2;
+    menuItem -l "Reverse V"   ccgSE_IBL_Adv_menu_3;
+    menuItem -l "Reverse U&V" ccgSE_IBL_Adv_menu_4;
+    menuItem -l "Swap U&V"    ccgSE_IBL_Adv_menu_5;
+  optionMenuGrp -l " UV Output Direction: " -adj 2 -cw 1 110 -cc "ccgSE_IBL_AdvOutputUvSpace()" ccgSE_IBL_Adv_option2;
+    menuItem -l "No Change"   ccgSE_IBL_Adv_menu_1;
+    menuItem -l "Reverse U"   ccgSE_IBL_Adv_menu_2;
+    menuItem -l "Reverse V"   ccgSE_IBL_Adv_menu_3;
+    menuItem -l "Reverse U&V" ccgSE_IBL_Adv_menu_4;
+    menuItem -l "Swap U&V"    ccgSE_IBL_Adv_menu_5;
+  int $opt_sel = 5;
+  if($function==2 && `objExists ccgIblGeoShader`) $opt_sel = 1 + `getAttr ccgIblGeoShader.tex_changeUV`;
+  else if($function==1 && `objExists ccgLA_texture_Preview`){
+          string $previewSource[] = `listConnections -d 0 -s 1 -scn 1 ccgLA_texture_Preview.create`;
+          if(`nodeType $previewSource[0]`=="reverseSurface") $opt_sel = 2 + `getAttr ($previewSource[0]+".direction")`;
+        }
+  optionMenuGrp -e -sl $opt_sel ccgSE_IBL_Adv_option1;
+  $gCcgSE_IBL_AdvUvReadingDirection = $opt_sel - 1;
+  $gCcgSE_IBL_AdvUvWritingDirection = 0;
+  setParent ccgSE_IBL_Adv_column1;
+  //intFieldGrp -label "Lights' Point Size: " -cw 1 100 -cw 2 50 -nf 1 -v1 $gCcgSE_IBL_AdvButtonSize -cc "$gCcgSE_IBL_AdvButtonSize=#1;ccgSE_IBL_AdvButtonResize(#1);setFocus ccgSE_IBL_Adv_formlayout;";
+  separator;
+  text -l (" Number of Lights: "+ccgSE_IBL_AdvButtonCount()) -al "left" -rs 0 -fn "boldLabelFont" ccgSE_IBL_Adv_displayInfo;
+  text -l " Last picked light UV: -" -al "left" -rs 0 -fn "boldLabelFont" ccgSE_IBL_Adv_displayInfo1;
+  text -l " Last picked light Position: -" -al "left" -rs 0 -fn "boldLabelFont" ccgSE_IBL_Adv_displayInfo2;
+  separator;
+  rowColumnLayout -nr 1 -rs 1 2 -rh 1 22 ccgSE_IBL_Adv_rowcolumn3;
+  intFieldGrp -nf 1 -l "Number of Lights:" -value1 100 -cw 1 150 -cw 2 80 ccgSE_IBL_Adv_intfieldgrp1;
+  button -l "Seed" -w 80 -c "ccgSE_IBL_AdvSeed();";
+  setParent ccgSE_IBL_Adv_column1;
+  textFieldButtonGrp -l "Lights' positions file read as:" -cw 1 150 -adj 2 -cat 3 "both" 0 -text $files[1] -bl "      Read" -bc "ccgSE_IBL_AdvReadPosition(\"\");" ccgSE_IBL_Adv_datafileread;
+  textFieldGrp -l "Lights' positions file save as:" -cw 1 150 -adj 2 -text $files[1] -cc "setFocus ccgSE_IBL_Adv_formlayout;" ccgSE_IBL_Adv_datafileas;
+  separator;
+  setParent ccgSE_IBL_Adv_column0;
+  rowColumnLayout -nr 1 -rs 1 2 -rh 1 22 ccgSE_IBL_Adv_rowcolumn4;
+  string $savebutton = `button -l "Save|Build" -w ($resolution/3)`;
+    if($function==2) button -e -c "ccgSE_IBL_AdvSaveLightData();setFocus ccgSE_IBL_Adv_formlayout;" $savebutton;
+    else if($function==1) button -e -c "ccgSE_IBL_AdvBuildLightArray();setFocus ccgSE_IBL_Adv_formlayout;" $savebutton;
+  button -l "Close" -w ($resolution/3) -c "deleteUI ccgSE_IBL_Adv_Window";
+  button -l "Refresh" -w ($resolution/3) -annotation "When Lights become invisible, you may use this button." -c "setFocus ccgSE_IBL_Adv_formlayout;ccgSE_IBL_AdvButtonRefresh();";
+  showWindow ccgSE_IBL_Adv_Window;
+  
+  int $mainHeight = `window -q -h ccgSE_IBL_Adv_Window`;
+  string $framecmd1 = "window -e -h "+($mainHeight-187)+" ccgSE_IBL_Adv_Window";
+  string $framecmd2 = "window -e -h "+($mainHeight)+" ccgSE_IBL_Adv_Window";
+  frameLayout -e -cc $framecmd1 -ec $framecmd2 ccgSE_IBL_Adv_framelayout;
+  ccgSE_IBL_AdvInitialLightPos();
+  setFocus ccgSE_IBL_Adv_formlayout;
+  return 1;
+}

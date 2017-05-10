@@ -1,0 +1,206 @@
+global proc ccg_geo_ibl_shadowmap_add()
+{
+  global string $ccgAEIblAttrName;
+  int $number = `intSliderGrp -q -v ccgAEIblIntGrp`;
+  string $text = `textFieldGrp -q -text ccgAEIblTextGrp`;
+  
+  int $i;
+  //if($number>0 && $text!="")
+  //{
+    for($i=0;$i<$number;$i++)
+    {
+      setAttr ($ccgAEIblAttrName+"["+$i+"]") -type "string" ($text+$i);
+    }
+    while(`getAttr ($ccgAEIblAttrName+"["+$i+"]")`!="")
+    {
+      setAttr ($ccgAEIblAttrName+"["+$i+"]") -type "string" "";
+      $i++;
+    }
+  //}
+}
+
+global proc ccg_geo_ibl_shadowmap_ui(string $attrName)
+{
+  global string $ccgAEIblAttrName;
+  intSliderGrp -l "Number of lights" -field true -v 0 -minValue 0 -maxValue 200 -fieldMinValue 0 -fieldMaxValue 100000 -cc "ccg_geo_ibl_shadowmap_add" ccgAEIblIntGrp;
+  textFieldGrp -l "Shadowmap name" -tx "" -cc "ccg_geo_ibl_shadowmap_add" -fcc ccgAEIblTextGrp;
+  $ccgAEIblAttrName = $attrName;
+}
+
+global proc ccg_geo_ibl_shadowmap_command(string $attrName)
+{
+  global string $ccgAEIblAttrName;
+  $ccgAEIblAttrName = $attrName;
+  
+  int $i=0;
+  while(`getAttr ($attrName+"["+$i+"]")`!="")
+  {
+    $i++;
+  }
+  intSliderGrp -e -v $i ccgAEIblIntGrp;
+  if($i>0)
+  {
+    string $text = `getAttr ($attrName+"[0]")`;
+    $text = startString($text, (size($text)-1));
+    textFieldGrp -e -text $text ccgAEIblTextGrp;
+  }else textFieldGrp -e -text "" ccgAEIblTextGrp;
+}
+
+global proc AEccg_geo_iblTemplate( string $nodeName )
+{
+  editorTemplate -beginScrollLayout;
+
+  editorTemplate -beginLayout "Texture Lookup" -collapse false;
+    editorTemplate -l "Texture" -ac "texture";
+    editorTemplate -l "Texture UV" -ac "tex_changeUV";
+    editorTemplate -l "Rotation" -ac "rotate";
+    editorTemplate -l "Texture Rotation" -ac "tex_rotate";
+  editorTemplate -endLayout;
+
+  editorTemplate -beginLayout "Texture Color Correction" -collapse true;
+    editorTemplate -ac "gamma";
+    editorTemplate -l "Exposure (E)" -ac "exposure";
+    editorTemplate -l "Offset (O)" -ac "offset";
+    editorTemplate -l "Contrast Type (C)" -ac "contrastType";
+    editorTemplate -l "Contrast Value" -ac "contrastValue";
+    editorTemplate -l "Contrast Center" -ac "contrastCenter";
+    editorTemplate -l "Correction Order" -ac "correctOrder";
+    editorTemplate -ac "multiply";
+    editorTemplate -l "Clamp Min" -ac "clamp_low";
+    editorTemplate -l "Clamp Max" -ac "clamp_hi";
+  editorTemplate -endLayout;
+  
+  editorTemplate -beginLayout "Image Based Lighting" -collapse false;
+    editorTemplate -l "Lights Sample Mode" -ac "light_mode";
+    editorTemplate -l "Lights Points File" -ac "light_points_file";
+    editorTemplate -l "Lighting Sphere" -ac "half_sphere";
+    editorTemplate -l "Sphere Radius" -ac "radius";
+    editorTemplate -l "Center" -ac "center";
+    editorTemplate -beginLayout "IBL Samples" -collapse true;
+      editorTemplate -l "sample U" -ac "sampleU";
+      editorTemplate -l "sample V" -ac "sampleV";
+      editorTemplate -l "sample Number" -ac "sampleNumber";
+      editorTemplate -beginLayout "IBL Samples Algorithm" -collapse true;
+        editorTemplate -ac "iteration";
+        editorTemplate -ac "seed";
+      editorTemplate -endLayout;
+    editorTemplate -endLayout;
+    editorTemplate -beginLayout "IBL Intensity" -collapse true;
+      editorTemplate -l "Sky Intensity" -ac "intensity_sky";
+      editorTemplate -l "Ground Intensity" -ac "intensity_ground";
+    editorTemplate -endLayout;
+    editorTemplate -beginLayout "IBL Shadow" -collapse true;
+      editorTemplate -l "Shadow Mode" -ac "shadow_mode";
+      editorTemplate -l "Shadow Sphere" -ac "half_shadow";
+      editorTemplate -l "Shadow Color" -ac "shadow_color";
+      editorTemplate -l "Shadow Factor" -ac "shadow_factor";
+      editorTemplate -l "Shadow Emit Min" -ac "min_intensity";
+      editorTemplate -l "Shadow Emit Max" -ac "max_intensity";
+    editorTemplate -endLayout;
+  editorTemplate -endLayout;
+  
+  editorTemplate -beginLayout "Lights Properties" -collapse false;
+    editorTemplate -l "Light Type" -ac "light_type";
+    editorTemplate -l "Light Visible" -ac "visible";
+    editorTemplate -l "Light Visible Radius" -ac "light_radius";
+  editorTemplate -endLayout;
+  
+  editorTemplate -beginLayout "Maya Directional Light" -collapse true;
+    editorTemplate -l "Emit Diffuse" -ac "mayadir_emitDiffuse";
+    editorTemplate -l "Emit Specular" -ac "mayadir_emitSpecular";
+    editorTemplate -l "Use Depth Map Shadows" -ac "mayadir_useDepthMapShadows";
+    editorTemplate -l "Use Light Position" -ac "mayadir_useLightPosition";
+    editorTemplate -beginLayout "Raytrace Shadow Attributes" -collapse false;
+      editorTemplate -l "Use Ray Trace Shadows" -ac "mayadir_useRayTraceShadows";
+      editorTemplate -l "Light Angle" -ac "mayadir_lightAngle";
+      editorTemplate -l "Shadow Rays" -ac "mayadir_shadowRays";
+      editorTemplate -l "Ray Depth Limit" -ac "mayadir_rayDepthLimit";
+    editorTemplate -endLayout;
+  editorTemplate -endLayout;
+  
+  editorTemplate -beginLayout "Maya Spot Light" -collapse true;
+    editorTemplate -l "Emit Diffuse" -ac "mayaspot_emitDiffuse";
+    editorTemplate -l "Emit Specular" -ac "mayaspot_emitSpecular";
+    editorTemplate -l "Decay Rate" -ac "mayaspot_decayRate";
+    editorTemplate -l "Cone Angle" -ac "mayaspot_coneAngle";
+    editorTemplate -l "Penumbra Angle" -ac "mayaspot_penumbraAngle";
+    editorTemplate -l "Drop Off" -ac "mayaspot_dropoff";
+    // light effects
+    editorTemplate -beginLayout "Light Effects" -collapse true;
+      editorTemplate -l "Fog Spread" -ac "mayaspot_fogSpread";
+      editorTemplate -l "Fog Intensity" -ac "mayaspot_fogIntensity";
+      editorTemplate -l "Barn Doors" -ac "mayaspot_barnDoors";
+      editorTemplate -l "Left Barn Door" -ac "mayaspot_leftBarnDoor";
+      editorTemplate -l "Right Barn Door" -ac "mayaspot_rightBarnDoor";
+      editorTemplate -l "Top Barn Door" -ac "mayaspot_topBarnDoor";
+      editorTemplate -l "Bottom Barn Door" -ac "mayaspot_bottomBarnDoor";
+      // decay regions
+      editorTemplate -beginLayout "Decay Regions" -collapse true;
+        editorTemplate -l "Use Decay Regions" -ac "mayaspot_useDecayRegions";
+        editorTemplate -beginLayout "Region 1" -collapse true;
+          editorTemplate -l "Start Distance 1" -ac "mayaspot_startDistance1";
+          editorTemplate -l "End Distance 1" -ac "mayaspot_endDistance1";
+        editorTemplate -endLayout;
+        editorTemplate -beginLayout "Region 2" -collapse true;
+          editorTemplate -l "Start Distance 2" -ac "mayaspot_startDistance2";
+          editorTemplate -l "End Distance 2" -ac "mayaspot_endDistance2";
+        editorTemplate -endLayout;
+        editorTemplate -beginLayout "Region 3" -collapse true;
+          editorTemplate -l "Start Distance 3" -ac "mayaspot_startDistance3";
+          editorTemplate -l "End Distance 3" -ac "mayaspot_endDistance3";
+        editorTemplate -endLayout;
+      editorTemplate -endLayout;
+    editorTemplate -endLayout;
+    // shadow
+    editorTemplate -beginLayout "Shadow" -collapse false;
+      editorTemplate -l "Use Depth Map Shadows" -ac "mayaspot_useDepthMapShadows";
+      editorTemplate -beginLayout "Raytrace Shadow Attributes" -collapse false;
+        editorTemplate -l "Use Ray Trace Shadows" -ac "mayaspot_useRayTraceShadows";
+        editorTemplate -l "Light Radius" -ac "mayaspot_lightRadius";
+        editorTemplate -l "Shadow Rays" -ac "mayaspot_shadowRays";
+        editorTemplate -l "Ray Depth Limit" -ac "mayaspot_rayDepthLimit";
+      editorTemplate -endLayout;
+    editorTemplate -endLayout;
+  editorTemplate -endLayout;
+  
+  editorTemplate -beginLayout "Mental ray Directional Light" -collapse true;
+    editorTemplate -l "Use Light Position" -ac "mrdir_useLightPosition";
+    editorTemplate -beginLayout "Shadow" -collapse false;
+      editorTemplate -io -l "Use Depth Map Shadows" -ac "mrdir_useDepthMapShadows";
+      editorTemplate -io -l "Use Ray Trace Shadows" -ac "mrdir_useRayTraceShadows";
+    editorTemplate -endLayout;
+  editorTemplate -endLayout;
+  
+  editorTemplate -beginLayout "Mental ray Spot Light" -collapse true;
+    editorTemplate -l "Cone Angle" -ac "mrspot_coneAngle";
+    editorTemplate -l "Penumbra Angle" -ac "mrspot_penumbraAngle";
+    editorTemplate -l "Attenuation" -ac "mrspot_atten";
+    editorTemplate -l "Start" -ac "mrspot_start";
+    editorTemplate -l "Stop" -ac "mrspot_stop";
+    editorTemplate -beginLayout "Shadow" -collapse false;
+      editorTemplate -io -l "Use Depth Map Shadows" -ac "mrspot_useDepthMapShadows";
+      editorTemplate -io -l "Use Ray Trace Shadows" -ac "mrspot_useRayTraceShadows";
+    editorTemplate -endLayout;
+  editorTemplate -endLayout;
+  
+  editorTemplate -beginLayout "Shadow Map Attributes" -collapse true;
+    editorTemplate -l "Shadow Map Format" -ac "shadowmap_format";
+    editorTemplate -l "Resolution" -ac "shadowmap_resolution";
+    editorTemplate -l "Samples" -ac "shadowmap_samples";
+    editorTemplate -l "Softness" -ac "shadowmap_softness";
+    editorTemplate -l "Bias" -ac "shadowmap_bias";
+    editorTemplate -beginLayout "Detail Shadow Map" -collapse false;
+      editorTemplate -l "Accuracy" -ac "shadowmapdetail_accuracy";
+      editorTemplate -l "Type" -ac "shadowmapdetail_type";
+    editorTemplate -endLayout;
+    editorTemplate -l "Shadow Map File Name" -ac "shadowmap_file";
+    editorTemplate -callCustom "ccg_geo_ibl_shadowmap_ui"
+      "ccg_geo_ibl_shadowmap_command"
+      "shadowmap_file";
+  editorTemplate -endLayout;
+
+  AEdependNodeTemplate $nodeName;
+  editorTemplate -addExtraControls;
+
+  editorTemplate -endScrollLayout;
+}

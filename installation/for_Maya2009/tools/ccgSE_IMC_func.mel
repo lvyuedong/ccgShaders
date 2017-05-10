@@ -1,0 +1,206 @@
+global proc string ccgSE_IMC_cameraRename(string $cam)
+{
+  if(`startsWith $cam "*"`) return (endString($cam,(size($cam)-1)));
+  return $cam;
+}
+
+global proc ccgSE_IMC_refreshOption()
+{
+  string $cams[] = `ls -fl -ca`;
+  int $i,$num;
+  $num = size($cams);
+  string $compress;
+  for($i=0;$i<$num;$i++){
+    $compress = "ccg_output_bezier_clamp_" + $cams[$i];
+    if(`objExists $compress`){
+      menuItem -e -l ("*"+$cams[$i]) ("ccgSE_IMC_option_menu_"+($i+1));
+    }
+  }
+}
+
+global proc ccgSE_IMC_boxSelect(string $passes[])
+{
+  int $num = size($passes);
+  int $i;
+  for($i=0;$i<$num;$i++){
+    switch($passes[$i]){
+      case "combined":  checkBoxGrp -e -v1 1 ccgSE_IMC_checkboxgrp1;
+                        break;
+      case "col":       checkBoxGrp -e -v2 1 ccgSE_IMC_checkboxgrp1;
+                        break;
+      case "diff":      checkBoxGrp -e -v3 1 ccgSE_IMC_checkboxgrp1;
+                        break;
+      case "ambi":      checkBoxGrp -e -v4 1 ccgSE_IMC_checkboxgrp1;
+                        break;
+      case "spec":      checkBoxGrp -e -v1 1 ccgSE_IMC_checkboxgrp2;
+                        break;
+      case "incan":     checkBoxGrp -e -v2 1 ccgSE_IMC_checkboxgrp2;
+                        break;
+      case "refl":      checkBoxGrp -e -v3 1 ccgSE_IMC_checkboxgrp2;
+                        break;
+      case "refr":      checkBoxGrp -e -v4 1 ccgSE_IMC_checkboxgrp2;
+                        break;
+      case "nor":       checkBoxGrp -e -v1 1 ccgSE_IMC_checkboxgrp3;
+                        break;
+      case "ao":        checkBoxGrp -e -v2 1 ccgSE_IMC_checkboxgrp3;
+                        break;
+      case "reflao":    checkBoxGrp -e -v3 1 ccgSE_IMC_checkboxgrp3;
+                        break;
+      case "shad":      checkBoxGrp -e -v4 1 ccgSE_IMC_checkboxgrp3;
+                        break;
+      case "z":         checkBoxGrp -e -v1 1 ccgSE_IMC_checkboxgrp4;
+                        break;
+      case "globillum": checkBoxGrp -e -v2 1 ccgSE_IMC_checkboxgrp4;
+                        break;
+      case "sssfront":  checkBoxGrp -e -v3 1 ccgSE_IMC_checkboxgrp4;
+                        break;
+      case "sssmiddle": checkBoxGrp -e -v4 1 ccgSE_IMC_checkboxgrp4;
+                        break;
+      case "sssback":   checkBoxGrp -e -v1 1 ccgSE_IMC_checkboxgrp5;
+                        break;
+    }
+  }
+}
+
+global proc ccgSE_IMC_boxClear()
+{
+  int $i,$j;
+  for($i=1;$i<=5;$i++){
+    int $box_size=4;
+    if($i==5) $box_size = 1;
+    string $cmd;
+    for($j=1;$j<=$box_size;$j++){
+      $cmd = "checkBoxGrp -e -v"+$j+" 0 ccgSE_IMC_checkboxgrp"+$i;
+      eval($cmd);
+    }
+  }
+}
+
+global proc ccgSE_IMC_getPassesFromBuffer()
+{
+  if(`objExists "ccgGeoShaderFramebuffers"`){
+    string $passesString = `getAttr "ccgGeoShaderFramebuffers.fbWriteString"`;
+    if($passesString!=""){
+      string $passes[];
+      string $tok[],$tmp[];
+      int $i;
+      tokenize $passesString ";" $tok;
+      for($i=0;$i<size($tok);$i++){
+        tokenize $tok[$i] "=" $tmp;
+        $passes[$i] = $tmp[0];
+      }
+      ccgSE_IMC_boxSelect($passes);
+    }
+  }
+}
+
+global proc ccgSE_IMC_initial(string $cam)
+{
+  $cam = ccgSE_IMC_cameraRename($cam);
+  string $compress = "ccg_output_bezier_clamp_" + $cam;
+  if(`objExists $compress`){
+    string $passString = `getAttr ($compress+".extractPasses")`;
+    if($passString!=""){
+      ccgSE_IMC_boxClear();
+      string $tok[];
+      tokenize $passString ";" $tok;
+      ccgSE_IMC_boxSelect($tok);
+    }else ccgSE_IMC_boxClear();
+  }else ccgSE_IMC_boxClear();
+}
+
+global proc string ccgSE_IMC_getPasses()
+{
+  string $passes;
+  int $i,$j;
+  for($i=1;$i<=5;$i++){
+    int $box_size=4;
+    if($i==5) $box_size = 1;
+    string $cmd;
+    for($j=1;$j<=$box_size;$j++){
+      $cmd = "checkBoxGrp -q -v"+$j+" ccgSE_IMC_checkboxgrp"+$i;
+      if(eval($cmd)){
+          $cmd = "checkBoxGrp -q -l"+$j+" ccgSE_IMC_checkboxgrp"+$i;
+          string $label = strip(eval($cmd));
+          $passes += ccgSE_passesNameConvert($label) + ";";
+      }
+    }
+  }
+  
+  if(`endsWith $passes ";"`) $passes = startString($passes, (size($passes)-1));
+  
+  return $passes;
+}
+
+global proc int ccgSE_imageCompress()
+{
+  string $camera = `optionMenuGrp -q -v ccgSE_IMC_option`;
+  $camera = ccgSE_IMC_cameraRename($camera);
+  string $compressName = "ccg_output_bezier_clamp_" + $camera;
+  string $existsOuput[] = `listConnections -d 0 -s 1 -scn 1 ($camera+".miOutputShader")`;
+  if(size($existsOuput)>0){
+    if(`nodeType $existsOuput[0]`!="ccg_output_bezier_clamp"){
+       promptDialog -title "Warning" -message ($camera+" already been connected with other output shader!\nThe operation failed.") -button "OK";   
+       return 0;
+    }
+  }
+  
+  if(!`objExists $compressName`) createNode ccg_output_bezier_clamp -n $compressName;
+  if(!`isConnected ($compressName+".message") ($camera+".miOutputShader")`) 
+    connectAttr -f ($compressName+".message") ($camera+".miOutputShader");
+  setAttr ($camera+".miFbComputeColor") 1;
+  setAttr ($camera+".miFbBitsizeColor") 3;
+  //get passes
+  string $passes = ccgSE_IMC_getPasses();
+  setAttr -type "string" ($compressName+".extractPasses") $passes;
+  ccgSE_IMC_refreshOption();
+  select -r $compressName;
+  return 1;
+}
+
+global proc ccgSE_imageCompress_select()
+{
+  string $camera = `optionMenuGrp -q -v ccgSE_IMC_option`;
+  $camera = ccgSE_IMC_cameraRename($camera);
+  string $compressName = "ccg_output_bezier_clamp_" + $camera;
+  if(`objExists $compressName`) select -r $compressName;
+  else select -cl;
+}
+
+global proc ccgSE_imageCompress_delete()
+{
+  string $camera = `optionMenuGrp -q -v ccgSE_IMC_option`;
+  $camera = ccgSE_IMC_cameraRename($camera);
+  string $compressName = "ccg_output_bezier_clamp_" + $camera;
+  if(`objExists $compressName`){
+    delete $compressName;
+    string $menu_item = "ccgSE_IMC_option_menu_"+`optionMenuGrp -q -sl ccgSE_IMC_option`;
+    string $menuString = `menuItem -q -l $menu_item`;
+    if(`startsWith $menuString "*"`) menuItem -e -l (`endString $menuString (size($menuString)-1)`) $menu_item;
+    ccgSE_IMC_boxClear();
+  }
+}
+
+global proc ccgSE_imageCompress_help()
+{
+  if(`windowPref -exists ccgSE_IMC_help_window`) windowPref -e -w 442 -h 600 ccgSE_IMC_help_window;
+  if(`window -exists ccgSE_IMC_help_window`) deleteUI ccgSE_IMC_help_window;
+  window -t "Image Compress Help" -w 442 -h 600 -sizeable 0 -in "ICH" -rtf true ccgSE_IMC_help_window;
+  columnLayout -rs 10 -co "left" 10 -cal "left" ccgSE_IMC_help_columnlayout1;
+  string $imagePath = `getenv MAYA_LOCATION` + "/icons/ccgSE_imageCompress.bmp";
+  image -w 416 -h 238 -image $imagePath;
+  string $txt = "The upper image shows how the image be compressed. The x-axis show the value of "+
+  							"input image, and the y-axis show the compressed value of output image. Blue dash line means "+
+  							"the value before compressing, red lines are always straight and green line is a curve in most case.\n\n"+
+  							"Suppose the \"Extract Range\" was 2, \"Clamp Min\" was 0.7, \"Clamp Max\" was 1 and "+
+  							"\"Curvature\" was 0.2, which mean that when the input value reach 2.0, the output value should be at 1.0, "+
+  							"the value between 0.7 and 2.0 will be mapped onto 0.7 to 1.0. The compression curve should look like the upper image.\n\n"+
+  							"Actually the curve (with green) is a quadratic Bezier curve, and of course the curvature is determined by "+
+  							"the three points B0, B1 and B2. When you adjust curvature, you actually move the point B1 go and back in "+
+  							"the direction of blue dash line. If curvature is 0, B1 will meet B0 and the curve will be a straight line. "+
+  							"You can read more about bezier curve at\nhttp://en.wikipedia.org/wiki/B%C3%A9zier_curve\n\n"+
+  							"The red line on the right side of green curve is the tangent line at marked point B2. When curvature is 0, "+
+  							"this tangent line will be a horizontal line through the value of 1.0 in the current situation.\n";
+  scrollField -w 416 -h 305 -wordWrap true -editable false -tx $txt scrollfield1;
+  showWindow ccgSE_IMC_help_window;
+}

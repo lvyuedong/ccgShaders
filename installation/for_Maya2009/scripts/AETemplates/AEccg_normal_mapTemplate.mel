@@ -1,0 +1,27 @@
+// custom AE Template for mental ray ccg_normal_map shader created by ccg
+// contact: lvyuedong@hotmail.com
+
+
+global proc AEccg_normal_mapTemplate ( string $nodeName ) 
+{ 
+	AEswatchDisplay $nodeName; 
+
+	editorTemplate -beginScrollLayout; 
+
+	editorTemplate -beginLayout "Mental Ray Texture" -collapse 0; 
+		editorTemplate -label "Color" -addControl "color";
+	editorTemplate -endLayout; 
+	
+	editorTemplate -beginLayout "Normal Map Space" -collapse 0; 
+		editorTemplate -label "Intensity" -addControl "intensity";
+		editorTemplate -label "Normal Space" -addControl "normal_space";
+	editorTemplate -endLayout; 
+	
+	editorTemplate -beginLayout "Texture Space" -collapse 0; 
+		editorTemplate -label "Texture Space" -addControl "texture_space" ; 
+	editorTemplate -endLayout; 
+
+	AEmentalrayBaseTemplate($nodeName);
+	editorTemplate -endScrollLayout; 
+} 
+
