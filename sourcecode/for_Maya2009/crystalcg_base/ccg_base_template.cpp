@@ -43,6 +43,7 @@ struct ccg_base_template {
 	miBoolean	diffuseOpacity;
 	miBoolean	optimal;
 	miTag		fbWriteString;
+	miBoolean	disableShadowChain;
 };
 
 extern "C" DLLEXPORT void ccg_base_template_init(      /* init shader */
@@ -102,7 +103,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_template(
 	//copyright: miColor	copyright;
 	miColor		passes[LAYER_NUM], passesCombined[LAYER_NUM];
 	miScalar	zmin,zmax,z;    /* limitation of depth */
-	miBoolean	enableTransPass, passesOnce, amb_add, diffOpacity;
+	miBoolean	enableTransPass, passesOnce, diffOpacity;
 	int			i;
 	miVector	refr_dir, normalbend;
 	struct ccg_passfbArray **fbarray;
@@ -130,31 +131,26 @@ extern "C" DLLEXPORT miBoolean ccg_base_template(
 
 	if (state->type == miRAY_SHADOW)
 	{
-		if(state->options->shadow=='s')
-  		{
-			if(itransp.a!=1.0)
-			{
-				ccg_shadow_choose_volume(state);
-				mi_trace_shadow_seg(result, state);
-				result->r *= transp->r;
-				result->g *= transp->g;
-  				result->b *= transp->b;
-				result->a *= transp->a;
-				return(miTRUE);
-			}else {
-					result->r = result->g = result->b = result->a = 1;
-					return(miFALSE);
-				  }
-		}
 		if(itransp.a!=1.0)
-  		{
-			result->r *= transp->r;
-			result->g *= transp->g;
-  			result->b *= transp->b;
-			result->a *= transp->a;
-  			return(miTRUE);
-  		}else {
-				result->r = result->g = result->b = result->a = 1;
+		{
+			if(*mi_eval_boolean(&paras->disableShadowChain)){
+				result->r = transp->r;
+				result->g = transp->g;
+				result->b = transp->b;
+				result->a = transp->a;
+			}else {
+						if(state->options->shadow=='s'){
+							ccg_shadow_choose_volume(state);
+							mi_trace_shadow_seg(result, state);
+						}
+						result->r *= transp->r;
+						result->g *= transp->g;
+						result->b *= transp->b;
+						result->a *= transp->a;
+				  }
+			return(miTRUE);
+		}else {
+				result->r = result->g = result->b = result->a = 0;
 				return(miFALSE);
 			  }
 	}
@@ -625,8 +621,9 @@ extern "C" DLLEXPORT miBoolean ccg_base_template(
 		passes[LAYER_combined].g = passes[LAYER_col].g * (passes[LAYER_diff].g + passes[LAYER_ambi].g);
 		passes[LAYER_combined].b = passes[LAYER_col].b * (passes[LAYER_diff].b + passes[LAYER_ambi].b);
 
+		/*
 		//PASS: ambient occlusion
-		amb_add	= *mi_eval_boolean(&paras->add_to_combined);
+		miBoolean amb_add	= *mi_eval_boolean(&paras->add_to_combined);
 		if(whichlayer == LAYER_ao || (amb_add && whichlayer == LAYER_combined))
 		{
 			passes[LAYER_ao] = *ccg_mi_eval_color(state, &paras->ambientOcclusion);
@@ -647,6 +644,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_template(
 				return(miTRUE);
 			}
 		}
+		*/
 
 		miInteger *blend_mode = mi_eval_integer(&paras->blendMode);
 		switch(*blend_mode)
@@ -1313,10 +1311,11 @@ extern "C" DLLEXPORT miBoolean ccg_base_template(
 				passesCombined[LAYER_combined].g = passesCombined[LAYER_col].g * (passesCombined[LAYER_diff].g + passesCombined[LAYER_ambi].g);
 				passesCombined[LAYER_combined].b = passesCombined[LAYER_col].b * (passesCombined[LAYER_diff].b + passesCombined[LAYER_ambi].b);
 
+				/*
 				//PASS: ambient and reflect occlusion
 				if(state->type == miRAY_EYE)
 				{
-					amb_add = *mi_eval_boolean(&paras->add_to_combined);
+					miBoolean amb_add = *mi_eval_boolean(&paras->add_to_combined);
 					passes[LAYER_ao] = *ccg_mi_eval_color(state, &paras->ambientOcclusion);
 					if((*fbarray)->passfbArray[LAYER_ao] && framebuffers->get_index(ccg_get_pass_name(buffer_name,LAYER_ao), buffer_index))
 					{
@@ -1331,6 +1330,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_template(
 					}
 					if(amb_add)	ccg_color_multiply(&passesCombined[LAYER_refl], &passes[LAYER_reflao], &passesCombined[LAYER_refl]);
 				}
+				*/
 
 				miInteger *blend_mode = mi_eval_integer(&paras->blendMode);
 				switch(*blend_mode)

@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <math.h>
 #include <string.h>
 #include "shader.h"
 #include "geoshader.h"
@@ -8,13 +9,31 @@
 
 #pragma warning(disable : 4267)
 
-struct ccg_base_lambert {
+#define SQR(a) (pow((a), 2))
+
+struct ccg_maya_blinn {
 	miColor		color;
 	miColor		transparency;
 	miColor		ambient;
 	miColor		incandescence;
 	miVector	normalMapping;
 	miScalar	diffuse;
+	miScalar	eccentricity;
+	miScalar	specularRolloff;
+	miColor		specular;
+	miColor		reflectivity;
+	miColor		reflectedColor;
+	miInteger	insideReflectLimit;
+	miBoolean	disableRayRefl;
+	miInteger	fresnel_mode;
+	miScalar	fresnel_min;
+	miScalar	fresnel_max;
+	miScalar	n_incidence;
+	miScalar	n_transmission;
+	miBoolean	fresnel_diffuse;
+	miBoolean	fresnel_specular;
+	miScalar	refractiveIndex;
+	miColor		refractedColor;
 	miInteger	ibl_enable;
 	miColor		bent;
 	miInteger	bent_space;
@@ -24,6 +43,7 @@ struct ccg_base_lambert {
 	miColor		ibl_bright;
 	miColor		ibl_dark;
 	miBoolean	ibl_emit_diffuse;
+	miBoolean	ibl_emit_specular;
 	miScalar	ibl_angle;
 	miColor		ambientOcclusion;
 	miColor		reflectOcclusion;
@@ -36,15 +56,15 @@ struct ccg_base_lambert {
 	miBoolean	diffuseOpacity;
 	miTag		fbWriteString;
 	miBoolean	disableShadowChain;
-	int			mode;			/* light mode: 0..2 */
-	int			i_light;		/* index of first light */
-	int			n_light;		/* number of lights */
-	miTag		light[1];		/* list of lights */
+	int			mode;		/* light mode: 0..2 */
+	int			i_light;	/* index of first light */
+	int			n_light;	/* number of lights */
+	miTag		light[1];	/* list of lights */
 };
 
-extern "C" DLLEXPORT void ccg_base_lambert_init(      /* init shader */
+extern "C" DLLEXPORT void ccg_maya_blinn_init(      /* init shader */
     miState         *state,
-    struct ccg_base_lambert *paras,
+    struct ccg_maya_blinn *paras,
     miBoolean       *inst_req)
 {
 	if (!paras) *inst_req = miTRUE;
@@ -60,7 +80,7 @@ extern "C" DLLEXPORT void ccg_base_lambert_init(      /* init shader */
 			miTag fbc = *mi_eval_tag(&paras->fbWriteString);
 			if(*mi_eval_boolean(&paras->passesInOnce))
 			{
-				if(!fbc) mi_error("Please set the fbWriteString parameter for ccg_base_lambert shader.");
+				if(!fbc) mi_error("Please set the fbWriteString parameter for ccg_maya_blinn shader.");
 				else {
 						char *fbstr = mi_mem_strdup((char*)mi_db_access(fbc));
 						mi_db_unpin( fbc );
@@ -128,9 +148,9 @@ extern "C" DLLEXPORT void ccg_base_lambert_init(      /* init shader */
 		 }
 }
 
-extern "C" DLLEXPORT void ccg_base_lambert_exit(      /* exit shader */
+extern "C" DLLEXPORT void ccg_maya_blinn_exit(      /* exit shader */
 	miState         *state,
-	struct ccg_base_lambert *paras)
+	struct ccg_maya_blinn *paras)
 {
 	if(paras)
 	{
@@ -145,15 +165,17 @@ extern "C" DLLEXPORT void ccg_base_lambert_exit(      /* exit shader */
 	}
 }
 
-extern "C" DLLEXPORT int ccg_base_lambert_version(void) {return(1);}
+extern "C" DLLEXPORT int ccg_maya_blinn_version(void) {return(1);}
 
-extern "C" DLLEXPORT miBoolean ccg_base_lambert(
+extern "C" DLLEXPORT miBoolean ccg_maya_blinn(
   miColor   *result,
   miState   *state,
-  struct ccg_base_lambert *paras)
+  struct ccg_maya_blinn *paras)
 {
-	miColor		*color, *transp, *incan;
+	miColor		color, transp, incan, spec, reflecti, reflected, refracted;
+	miInteger	in_refl;
 	miColor		itransp, ambi;
+	miScalar	eccen, rolloff, refracti, fkr, reflcoeff;
 	miScalar	diff;   /* the relationship between ambi, color and diff is, color*(dot_nl*diff+ambi)*/
 	miTag		*light, *again_light;   /* tag of light instance */
 	int			n_l;    /* number of light sources */
@@ -163,17 +185,21 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 	int			samples;  /* # of samples taken */
 	int			whichlayer;
 	miColor		lightColor;   /* color from light source */
-	miColor		sum;    /* summed sample colors; summed sample speculars */
+	miColor		sum, spe;    /* summed sample colors; summed sample speculars */
 	miVector	dir;		/* direction towards light or reflection or refraction */
-	miScalar	dot_nl;   /* dot prod of normal and light direction*/
+	miScalar	dot_nl; /* dot prod of normal and light direction*/
+	miScalar	s;		/* specular refl. for these angles */
+	miVector	E, N;	/* E:eye ray direction; N:normalized normal vector; */
+	miScalar	EN;		/* dot product of E and N */
 	miColor		tempColor;
-	//copyright: miColor		copyright;
+	//copyright: miColor	copyright;
 	miColor		passes[LAYER_NUM], passesCombined[LAYER_NUM];
-	miScalar	zmin, zmax, z;    /* limitation of depth */
-	int			i;
-	miVector	normalbend;
-	miBoolean	enableTransPass, passesOnce, diffOpacity;
+	miScalar	zmin,zmax,z;    /* limitation of depth */
+	miBoolean	enableTransPass, specEntry, rayRefl, passesOnce, diffOpacity;
+	int			i,tmpInt;
+	miVector	normalbend, refr_dir;
 	struct ccg_passfbArray **fbarray;
+	//float	***fresnelLUT;
 	struct ccg_raystate *mystate, my;
 	const miOptions *orig_option;
 	miOptions option_copy;
@@ -184,7 +210,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 
 	miTag	parentShaderTag;
 	char	*parentDeclName, *compareStr, *pch;
-	
+
 	miBoolean	*mayaStateDiffuse = NULL, *mayaStateSpecular = NULL;
 	miBoolean	emitDiffuse = miTRUE;		/* default emits diffuse */
 	miBoolean	emitSpecular = miTRUE;	/* default emits specular */
@@ -192,31 +218,31 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 	miColor	ccg_solid_black = {0,0,0,1};
 	miColor	ccg_trans_black = {0,0,0,0};
 
-	transp	= mi_eval_color(&paras->transparency);
-	itransp.r = 1 - transp->r;
-	itransp.g = 1 - transp->g;
-	itransp.b = 1 - transp->b;
+	transp	= *mi_eval_color(&paras->transparency);
+	itransp.r = 1 - transp.r;
+	itransp.g = 1 - transp.g;
+	itransp.b = 1 - transp.b;
 	itransp.a = itransp.r * 0.3f + itransp.g * 0.59f + itransp.b * 0.11f;
-	transp->a = 1 - itransp.a;
+	transp.a = 1 - itransp.a;
 
 	if (state->type == miRAY_SHADOW)
 	{
 		if(itransp.a!=1.0)
 		{
 			if(*mi_eval_boolean(&paras->disableShadowChain)){
-				result->r = transp->r;
-				result->g = transp->g;
-				result->b = transp->b;
-				result->a = transp->a;
+				result->r = transp.r;
+				result->g = transp.g;
+				result->b = transp.b;
+				result->a = transp.a;
 			}else {
 						if(state->options->shadow=='s'){
 							ccg_shadow_choose_volume(state);
 							mi_trace_shadow_seg(result, state);
 						}
-						result->r *= transp->r;
-						result->g *= transp->g;
-						result->b *= transp->b;
-						result->a *= transp->a;
+						result->r *= transp.r;
+						result->g *= transp.g;
+						result->b *= transp.b;
+						result->a *= transp.a;
 				  }
 			return(miTRUE);
 		}else {
@@ -255,6 +281,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 	whichlayer = *mi_eval_integer(&paras->layer);
 	if((state->type != miRAY_EYE && state->type != miRAY_TRANSPARENT && state->type != miRAY_REFRACT) || state->reflection_level>0){
 		whichlayer = LAYER_combined;
+		//state->user_size = LAYER_combined;
 	}
 
 	/* There are three cases when we should enter scope of (!passesOnce) only if passesOnce is enabled
@@ -278,13 +305,12 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 	}
 
 	mi_query(miQ_FUNC_USERPTR, state, 0, &fbarray);
-	ccg_color_init(&tempColor,0);
+	//mi_query(miQ_FUNC_USERPTR, state, 0, &fresnelLUT);
+	ccg_color_init(&tempColor, 0);
 	ccg_color_init(&withoutShadow, 0);
 	ccg_color_init(&withShadow, 0);
-	//copyright: ccg_color_init(&copyright, 0);
-	//copyright: ccg_illegal_copyright(state, &copyright);
 
-	/*	retrieve bumpMapping value, which never need to be used, to bend normal before 
+	/*	retrieve bumpMapping value which never need to be used, to bend normal before 
 		any other calculation of illumination model, since there is no way to perform MR's shader list in Maya	*/
 	normalbend = *mi_eval_vector(&paras->normalMapping);
 
@@ -318,9 +344,41 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 			return(miTRUE);
 		}
 
-		for(i=0;i<LAYER_NUM;i++)
+		//prepare fresnel coefficient
+		int fresnelMode =	*mi_eval_integer(&paras->fresnel_mode);
+		miBoolean f_diffuse	=	*mi_eval_boolean(&paras->fresnel_diffuse);
+		miBoolean f_specular	=	*mi_eval_boolean(&paras->fresnel_specular);
+		if(fresnelMode>0)
+		{
+			float nIncidence	=	*mi_eval_scalar(&paras->n_incidence);
+			float nTransmission	=	*mi_eval_scalar(&paras->n_transmission);
+			switch(fresnelMode){
+				case 0: //none of fresnel coefficient has been applied
+						break;
+				case 1: //apply mental ray default fresnel function
+						fkr = mi_fresnel_reflection(state, 1.0f, nTransmission/nIncidence);
+						break;
+				case 2:	//apply standard fresnel coefficient
+						fkr = ccg_fresnel_reflectance(state, nIncidence, nTransmission);
+						break;
+				//case 3: //look up table of standard fresnel coefficient
+				//		if(nIncidence<nTransmission && nTransmission>=1.1 && nTransmission<2.6)
+				//		{
+				//			row = ceil(nTransmission*10.0 - 11);
+				//			col = floor(ccg_clamp(acos(-state->dot_nd>0.999999?0.999999:-state->dot_nd)/CCG_PI*180.0,0,90));
+				//			fkr = (*fresnelLUT)[row][col];
+				//		}else fkr = ccg_fresnel_reflectance(state, nIncidence, nTransmission);
+				//		break;
+			}
+			float f_min = *mi_eval_scalar(&paras->fresnel_min);
+			float f_max = *mi_eval_scalar(&paras->fresnel_max);
+			if(f_max>f_min) ccg_smoothstep(f_min, f_max, fkr);
+		}else fkr = 1;
+
+		for(i=0;i<LAYER_NUM;i++){
 			ccg_color_assign(&passes[i], &ccg_trans_black);
-		
+		}
+
 		miColor		bent_normal;
 		bent_normal.a = -1;	//-1 used to decide if alpha contain occlusion info
 		ambi	=  *mi_eval_color(&paras->ambient);
@@ -338,13 +396,19 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 			}
 			state = (miState*)orig_state;
 		}
+		if(f_diffuse&&fresnelMode!=0) ccg_color_multiply_scalar(&ambi, 1-fkr, &ambi);
 		ccg_color_assign(&passes[LAYER_ambi],&ambi);
 
-		color	= mi_eval_color(&paras->color);
-		ccg_color_assign(&passes[LAYER_col],color);
-		incan	= mi_eval_color(&paras->incandescence);
-		ccg_color_assign(&passes[LAYER_incan],incan);
+		color	= *mi_eval_color(&paras->color);
+		ccg_color_assign(&passes[LAYER_col],&color);
+		incan	= *mi_eval_color(&paras->incandescence);
+		ccg_color_assign(&passes[LAYER_incan],&incan);
 		diff	=  *mi_eval_scalar(&paras->diffuse);
+		eccen	=	*mi_eval_scalar(&paras->eccentricity);
+		rolloff = *mi_eval_scalar(&paras->specularRolloff);
+		spec	=	*mi_eval_color(&paras->specular);
+		refracti = *mi_eval_scalar(&paras->refractiveIndex);
+		refracted	=	*mi_eval_color(&paras->refractedColor);
 		m     = *mi_eval_integer(&paras->mode);
 		n_l   = *mi_eval_integer(&paras->n_light);
 		i_l   = *mi_eval_integer(&paras->i_light);
@@ -358,17 +422,26 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 		}
 
 		//PASS: color
-		if(whichlayer==LAYER_col){
+		if(whichlayer==LAYER_col)
+		{
 			if(itransp.a!=1.0){
 				if(enableTransPass){
-					state->refraction_level--;
-					if(!mi_trace_transparent(&tempColor, state)){
-						tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
-					}
-					passes[LAYER_col].r = itransp.r * passes[LAYER_col].r + transp->r * tempColor.r;
-					passes[LAYER_col].g = itransp.g * passes[LAYER_col].g + transp->g * tempColor.g;
-					passes[LAYER_col].b = itransp.b * passes[LAYER_col].b + transp->b * tempColor.b;
-					passes[LAYER_col].a = itransp.a + transp->a * tempColor.a;
+					if(refracti==1.0)
+					{
+						state->refraction_level--;
+						if(!mi_trace_transparent(&tempColor, state)){
+							tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+						}
+					}else if(!ccg_color_compare(&refracted, &ccg_trans_black)){
+							mi_refraction_dir(&refr_dir, state, 1, refracti);
+							if(!mi_trace_refraction(&tempColor, state, &refr_dir))
+								tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+							ccg_color_multiply(&refracted, &tempColor, &tempColor);
+						  }else tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+					passes[LAYER_col].r = itransp.r * passes[LAYER_col].r + transp.r * tempColor.r;
+					passes[LAYER_col].g = itransp.g * passes[LAYER_col].g + transp.g * tempColor.g;
+					passes[LAYER_col].b = itransp.b * passes[LAYER_col].b + transp.b * tempColor.b;
+					passes[LAYER_col].a = itransp.a + transp.a * tempColor.a;
 				}else {
 						ccg_color_multiply(&passes[LAYER_col], &itransp, &passes[LAYER_col]);
 						passes[LAYER_col].a = itransp.a;
@@ -379,16 +452,25 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 		}
 
 		//PASS: incandescence
-		if(whichlayer==LAYER_incan){
+		if(whichlayer==LAYER_incan)
+		{
 			if(itransp.a!=1.0){
 				if(enableTransPass){
-					state->refraction_level--;
-					if(!mi_trace_transparent(&tempColor, state)){
-						tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
-					}
-					passes[LAYER_incan].r += transp->r * tempColor.r;
-					passes[LAYER_incan].g += transp->g * tempColor.g;
-					passes[LAYER_incan].b += transp->b * tempColor.b;
+					if(refracti==1.0)
+					{
+						state->refraction_level--;
+						if(!mi_trace_transparent(&tempColor, state)){
+							tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+						}
+					}else if(!ccg_color_compare(&refracted, &ccg_trans_black)){
+							mi_refraction_dir(&refr_dir, state, 1, refracti);
+							if(!mi_trace_refraction(&tempColor, state, &refr_dir))
+								tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+							ccg_color_multiply(&refracted, &tempColor, &tempColor);
+						  }else tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+					passes[LAYER_incan].r += transp.r * tempColor.r;
+					passes[LAYER_incan].g += transp.g * tempColor.g;
+					passes[LAYER_incan].b += transp.b * tempColor.b;
 				}
 			}
 			ccg_color_assign(result, &passes[LAYER_incan]);
@@ -400,13 +482,21 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 		{
 			if(itransp.a!=1.0){
 				if(enableTransPass){
-					state->refraction_level--;
-					if(!mi_trace_transparent(&tempColor, state)){
-						tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
-					}
-					passes[LAYER_sssfront].r += transp->r * tempColor.r;
-					passes[LAYER_sssfront].g += transp->g * tempColor.g;
-					passes[LAYER_sssfront].b += transp->b * tempColor.b;
+					if(refracti==1.0)
+					{
+						state->refraction_level--;
+						if(!mi_trace_transparent(&tempColor, state)){
+							tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+						}
+					}else if(!ccg_color_compare(&refracted, &ccg_trans_black)){
+							mi_refraction_dir(&refr_dir, state, 1, refracti);
+							if(!mi_trace_refraction(&tempColor, state, &refr_dir))
+								tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+							ccg_color_multiply(&refracted, &tempColor, &tempColor);
+						  }else tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+					passes[LAYER_sssfront].r += transp.r * tempColor.r;
+					passes[LAYER_sssfront].g += transp.g * tempColor.g;
+					passes[LAYER_sssfront].b += transp.b * tempColor.b;
 				}
 			}
 			ccg_color_assign(result, &passes[LAYER_sssfront]);
@@ -418,13 +508,21 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 		{
 			if(itransp.a!=1.0){
 				if(enableTransPass){
-					state->refraction_level--;
-					if(!mi_trace_transparent(&tempColor, state)){
-						tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
-					}
-					passes[LAYER_sssmiddle].r += transp->r * tempColor.r;
-					passes[LAYER_sssmiddle].g += transp->g * tempColor.g;
-					passes[LAYER_sssmiddle].b += transp->b * tempColor.b;
+					if(refracti==1.0)
+					{
+						state->refraction_level--;
+						if(!mi_trace_transparent(&tempColor, state)){
+							tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+						}
+					}else if(!ccg_color_compare(&refracted, &ccg_trans_black)){
+							mi_refraction_dir(&refr_dir, state, 1, refracti);
+							if(!mi_trace_refraction(&tempColor, state, &refr_dir))
+								tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+							ccg_color_multiply(&refracted, &tempColor, &tempColor);
+						  }else tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+					passes[LAYER_sssmiddle].r += transp.r * tempColor.r;
+					passes[LAYER_sssmiddle].g += transp.g * tempColor.g;
+					passes[LAYER_sssmiddle].b += transp.b * tempColor.b;
 				}
 			}
 			ccg_color_assign(result, &passes[LAYER_sssmiddle]);
@@ -436,18 +534,39 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 		{
 			if(itransp.a!=1.0){
 				if(enableTransPass){
-					state->refraction_level--;
-					if(!mi_trace_transparent(&tempColor, state)){
-						tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
-					}
-					passes[LAYER_sssback].r += transp->r * tempColor.r;
-					passes[LAYER_sssback].g += transp->g * tempColor.g;
-					passes[LAYER_sssback].b += transp->b * tempColor.b;
+					if(refracti==1.0)
+					{
+						state->refraction_level--;
+						if(!mi_trace_transparent(&tempColor, state)){
+							tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+						}
+					}else if(!ccg_color_compare(&refracted, &ccg_trans_black)){
+							mi_refraction_dir(&refr_dir, state, 1, refracti);
+							if(!mi_trace_refraction(&tempColor, state, &refr_dir))
+								tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+							ccg_color_multiply(&refracted, &tempColor, &tempColor);
+						  }else tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+					passes[LAYER_sssback].r += transp.r * tempColor.r;
+					passes[LAYER_sssback].g += transp.g * tempColor.g;
+					passes[LAYER_sssback].b += transp.b * tempColor.b;
 				}
 			}
 			ccg_color_assign(result, &passes[LAYER_sssback]);
 			return(miTRUE);
 		}
+
+		E = state->dir;
+		mi_vector_neg(&E);
+		mi_vector_normalize(&E);
+		N = state->normal;
+		mi_vector_normalize(&N);
+		EN = mi_vector_dot(&E, &N);
+		
+		if (fabs(eccen) == 1.0f) eccen = 0.999999f;
+		eccen = 1.0f / (SQR(eccen) - 1.0f);
+		
+		if((spec.r==0.0&&spec.g==0.0&&spec.b==0.0)||eccen==0.0) specEntry = 0;
+		else specEntry = 1;
 
 		if (m == 1)   /* modify light list (inclusive mode) */
 			mi_inclusive_lightlist(&n_l, &light, state);
@@ -459,10 +578,11 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 		}
 
 		/* Loop over all light sources */
-		if(whichlayer==LAYER_combined || whichlayer==LAYER_diff){
+		if(whichlayer==LAYER_combined || whichlayer==LAYER_diff || whichlayer==LAYER_spec){
 			if (m == 4 || n_l){
-				for (mi::shader::LightIterator iter(state, light, n_l);!iter.at_end(); ++iter) {
+				for (mi::shader::LightIterator iter(state, light, n_l);!iter.at_end(); ++iter){
 					ccg_color_init(&sum, 0);
+					ccg_color_init(&spe, 0);
 					while (iter->sample()) {
 						//get custom maya light properties
 						if (mayabase_stateitem_get(state,
@@ -473,6 +593,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 							emitSpecular = *mayaStateSpecular;
 						}
 						iter->get_contribution(&lightColor);
+						dir = iter->get_direction();
 						dot_nl = iter->get_dot_nl();
 						
 						/* Lambert's cosine law */
@@ -481,25 +602,45 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 							sum.g += dot_nl * lightColor.g;
 							sum.b += dot_nl * lightColor.b;
 						}
+
+						/* specular reflection: maya blinn specular model */
+						if(emitSpecular && (whichlayer==LAYER_combined || whichlayer==LAYER_spec)) {
+							if(specEntry) {
+								s = ccg_SC_specular_blinn(eccen, rolloff, N, dir, E, dot_nl, EN);
+								if (s > 1e-5) {
+										spe.r += s * lightColor.r;
+										spe.g += s * lightColor.g;
+										spe.b += s * lightColor.b;
+								}
+							}
+						}
 					}
 					samples = iter->get_number_of_samples();
 					if (samples) {
-						passes[LAYER_diff].r += sum.r / samples * diff;
-						passes[LAYER_diff].g += sum.g / samples * diff;
-						passes[LAYER_diff].b += sum.b / samples * diff;
+						sum.r = sum.r / samples * diff;
+						sum.g = sum.g / samples * diff;
+						sum.b = sum.b / samples * diff;
+						if(f_diffuse&&fresnelMode!=0) ccg_color_multiply_scalar(&sum, 1-fkr, &sum);
+						ccg_color_add(&passes[LAYER_diff], &sum, &passes[LAYER_diff]);
+						spe.r = spe.r / samples * spec.r;
+						spe.g = spe.g / samples * spec.g;
+						spe.b = spe.b / samples * spec.b;
+						if(f_specular&&fresnelMode!=0) ccg_color_multiply_scalar(&spe, fkr, &spe);
+						ccg_color_add(&passes[LAYER_spec], &spe, &passes[LAYER_spec]);
 					}
 				}
 			}
 
 			//start image based lighting
 			miBoolean ibl_emit_diff =	*mi_eval_boolean(&paras->ibl_emit_diffuse);
-			if(ibl_en==3 && ibl_emit_diff)
+			miBoolean ibl_emit_spec	=	*mi_eval_boolean(&paras->ibl_emit_specular);
+			if(ibl_en==3 && (ibl_emit_diff || ibl_emit_spec))
 			{
 				orig_state = state;
 				state_copy = *orig_state;
 				state = &state_copy;
 
-				miColor		bent_normal =	*mi_eval_color(&paras->bent);
+				bent_normal = *mi_eval_color(&paras->bent);
 				miInteger	shadow_mode	=	*mi_eval_integer(&paras->ibl_shadow_mode);
 				float		min			=	*mi_eval_scalar(&paras->min_dist);
 				float		max			=	*mi_eval_scalar(&paras->max_dist);
@@ -508,25 +649,8 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 				miScalar	occ_alpha	=	bent_normal.a;
 				miVector	bent_vector, bent_i;
 
-				bent_vector.x = (bent_normal.r * 2.0f) - 1.0f;
-				bent_vector.y = (bent_normal.g * 2.0f) - 1.0f;
-				bent_vector.z = (bent_normal.b * 2.0f) - 1.0f;
-				mi_vector_normalize(&bent_vector);
-
-				switch(*mi_eval_integer(&paras->bent_space)) {
-					case 0: /* World */
-						mi_normal_from_world(state, &bent_i, &bent_vector);
-						break;
-					case 1: /* Camera */
-						mi_normal_from_camera(state, &bent_i, &bent_vector);
-						break;
-					case 2: /* Object */
-						mi_normal_from_object(state, &bent_i, &bent_vector);
-						break;
-					case 3: /* No change */
-						bent_i = bent_vector;
-						break;
-				}
+				ccg_colormap2Vector(&bent_normal, &bent_vector);
+				ccg_bent_space_conversion(state, *mi_eval_integer(&paras->bent_space), &bent_i, &bent_vector);
 
 				double self;
 				self = state->shadow_tol;
@@ -549,6 +673,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 					  }else if(shadow_mode==2) factor = 1;
 
 				ccg_color_init(&sum, 0);
+				ccg_color_init(&spe, 0);
 				if(mi_trace_environment(&lightColor, state, &bent_i)) {
 					dot_nl = mi_vector_dot(&state->normal, &bent_i);
 					if(dot_nl>0)
@@ -557,15 +682,28 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 						f.r = dark.r + factor*(bright.r - dark.r);
 						f.g = dark.g + factor*(bright.g - dark.g);
 						f.b = dark.b + factor*(bright.b - dark.b);
-						if(ibl_emit_diff) {
+						if(ibl_emit_diff && (whichlayer==LAYER_combined || whichlayer==LAYER_diff)) {
 							sum.r = dot_nl * lightColor.r * diff * f.r;
 							sum.g = dot_nl * lightColor.g * diff * f.g;
 							sum.b = dot_nl * lightColor.b * diff * f.b;
+							if(f_diffuse&&fresnelMode!=0) ccg_color_multiply_scalar(&sum, 1 - fkr, &sum);
 							ccg_color_add(&passes[LAYER_diff], &sum, &passes[LAYER_diff]);
+						}
+
+						if(ibl_emit_spec && (whichlayer==LAYER_combined || whichlayer==LAYER_spec)) {
+							if(specEntry) {
+								s = ccg_SC_specular_blinn(eccen, rolloff, N, bent_i, E, dot_nl, EN);
+								if (s > 1e-5) {
+									spe.r = s * lightColor.r * spec.r * f.r;
+									spe.g = s * lightColor.g * spec.g * f.g;
+									spe.b = s * lightColor.b * spec.b * f.b;
+									if(f_diffuse&&fresnelMode!=0) ccg_color_multiply_scalar(&spe, fkr, &spe);
+									ccg_color_add(&passes[LAYER_spec], &spe, &passes[LAYER_spec]);
+								}
+							}
 						}
 					}
 				}
-
 				state = (miState*)orig_state;
 			}else if(ibl_en==2)
 				{
@@ -588,6 +726,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 							if(rightPosition && mi_vector_dot(&state->normal, &lightDir) >= (*fbarray)->angle)
 							{
 								sum.r = sum.g = sum.b = 0;
+								spe.r = spe.g = spe.b = 0;
 								samples = 0;
 								while (mi_sample_light(&lightColor, &dir, &dot_nl, state, *iblTag, &samples)) {
 									if (mayabase_stateitem_get(state,
@@ -598,23 +737,41 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 										emitSpecular = *mayaStateSpecular;
 									}
 									/* Lambert's cosine law */
-									if(emitDiffuse) {
+									if(emitDiffuse && (whichlayer==LAYER_combined || whichlayer==LAYER_diff)) {
 										sum.r += dot_nl * lightColor.r;
 										sum.g += dot_nl * lightColor.g;
 										sum.b += dot_nl * lightColor.b;
+									}
+									/* specular reflection: maya blinn specular model */
+									if(emitSpecular && (whichlayer==LAYER_combined || whichlayer==LAYER_spec)) {
+										if(specEntry) {
+											s = ccg_SC_specular_blinn(eccen, rolloff, N, dir, E, dot_nl, EN);
+											if (s > 1e-5) {
+													spe.r += s * lightColor.r;
+													spe.g += s * lightColor.g;
+													spe.b += s * lightColor.b;
+											}
+										}
 									}
 								}
 								if (samples){
 									sum.r = sum.r / samples * diff;
 									sum.g = sum.g / samples * diff;
 									sum.b = sum.b / samples * diff;
+									if(f_diffuse&&fresnelMode!=0) ccg_color_multiply_scalar(&sum, 1-fkr, &sum);
 									ccg_color_add(&passes[LAYER_diff], &sum, &passes[LAYER_diff]);
+									spe.r = spe.r / samples * spec.r;
+									spe.g = spe.g / samples * spec.g;
+									spe.b = spe.b / samples * spec.b;
+									if(f_specular&&fresnelMode!=0) ccg_color_multiply_scalar(&spe, fkr, &spe);
+									ccg_color_add(&passes[LAYER_spec], &spe, &passes[LAYER_spec]);
 								}
 							}
 						}
 					}
 				}
 		}
+
 
 		//PASS: diffusion
 		if(whichlayer==LAYER_diff)
@@ -624,15 +781,21 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 			{
 				if(itransp.a!=1.0){
 					if(enableTransPass){
-						state->refraction_level--;
-						if(!mi_trace_transparent(&tempColor, state))
+						if(refracti==1.0)
 						{
-							tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
-						}
-						passes[LAYER_diff].r = itransp.r * passes[LAYER_diff].r + transp->r * tempColor.r;
-						passes[LAYER_diff].g = itransp.g * passes[LAYER_diff].g + transp->g * tempColor.g;
-						passes[LAYER_diff].b = itransp.b * passes[LAYER_diff].b + transp->b * tempColor.b;
-						passes[LAYER_diff].a = itransp.a + transp->a * tempColor.a;
+							state->refraction_level--;
+							if(!mi_trace_transparent(&tempColor, state)){
+								tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+							}
+						}else {
+								mi_refraction_dir(&refr_dir, state, 1, refracti);
+								if(!mi_trace_refraction(&tempColor, state, &refr_dir))
+									tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+							  }
+						passes[LAYER_diff].r = itransp.r * passes[LAYER_diff].r + transp.r * tempColor.r;
+						passes[LAYER_diff].g = itransp.g * passes[LAYER_diff].g + transp.g * tempColor.g;
+						passes[LAYER_diff].b = itransp.b * passes[LAYER_diff].b + transp.b * tempColor.b;
+						passes[LAYER_diff].a = itransp.a + transp.a * tempColor.a;
 					}else passes[LAYER_diff].a = 1;
 				} else passes[LAYER_diff].a = 1;
 			}else passes[LAYER_diff].a = 1;
@@ -641,17 +804,25 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 		}
 
 		//PASS: specular
-		//although lambert doesn't contribute specular, you cann't refuse the specular from other behind it which appear transparent.
-		if(whichlayer==LAYER_spec){
+		if(whichlayer==LAYER_spec)
+		{
 			if(itransp.a!=1.0){
 				if(enableTransPass){
-					state->refraction_level--;
-					if(!mi_trace_transparent(&tempColor, state)){
-						tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
-					}
-					passes[LAYER_spec].r += transp->r * tempColor.r;
-					passes[LAYER_spec].g += transp->g * tempColor.g;
-					passes[LAYER_spec].b += transp->b * tempColor.b;
+					if(refracti==1.0)
+					{
+						state->refraction_level--;
+						if(!mi_trace_transparent(&tempColor, state)){
+							tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+						}
+					}else if(!ccg_color_compare(&refracted, &ccg_trans_black)){
+							mi_refraction_dir(&refr_dir, state, 1, refracti);
+							if(!mi_trace_refraction(&tempColor, state, &refr_dir))
+								tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+							ccg_color_multiply(&refracted, &tempColor, &tempColor);
+						  }else tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+					passes[LAYER_spec].r += transp.r * tempColor.r;
+					passes[LAYER_spec].g += transp.g * tempColor.g;
+					passes[LAYER_spec].b += transp.b * tempColor.b;
 				}
 			}
 			ccg_color_assign(result, &passes[LAYER_spec]);
@@ -659,34 +830,76 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 		}
 
 		//PASS: reflection
-		if(whichlayer==LAYER_refl){
-			if(itransp.a!=1.0){
-				if(enableTransPass){
-					state->refraction_level--;
-					if(!mi_trace_transparent(&tempColor, state)){
-						tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
-					}
-					passes[LAYER_refl].r += transp->r * tempColor.r;
-					passes[LAYER_refl].g += transp->g * tempColor.g;
-					passes[LAYER_refl].b += transp->b * tempColor.b;
-				}
+  		rayRefl		=	*mi_eval_boolean(&paras->disableRayRefl);
+		reflecti	=	*mi_eval_color(&paras->reflectivity);
+		reflcoeff = ccg_SC_reflect_blinn(rolloff, EN);
+		reflecti.r *= spec.r * reflcoeff;
+		reflecti.g *= spec.g * reflcoeff;
+		reflecti.b *= spec.b * reflcoeff;
+		reflected	=	*mi_eval_color(&paras->reflectedColor);
+		in_refl		=	*mi_eval_integer(&paras->insideReflectLimit);
+		if(whichlayer==LAYER_refl || whichlayer==LAYER_combined)
+		{
+			if(!ccg_color_compare(&reflecti, &ccg_solid_black))
+			{
+				if(!rayRefl && (!state->inv_normal || state->reflection_level<in_refl))
+				{
+					mi_reflection_dir(&dir, state);
+					//we look at state->child to decide whether reflect ray hit object
+					if(mi_trace_reflection(&tempColor, state, &dir) && (state->child && state->child->dist>0.0f) ) ccg_color_multiply(&tempColor, &reflecti, &passes[LAYER_refl]);
+					else if(!ccg_color_compare(&reflected, &ccg_solid_black)) ccg_color_multiply(&reflected, &reflecti, &passes[LAYER_refl]);
+							else if(mi_trace_environment(&tempColor, state, &dir)) ccg_color_multiply(&tempColor, &reflecti, &passes[LAYER_refl]);
+				}else if(!ccg_color_compare(&reflected, &ccg_solid_black))
+							ccg_color_multiply(&reflected, &reflecti, &passes[LAYER_refl]);
+				if(fresnelMode!=0)ccg_color_multiply_scalar(&passes[LAYER_refl], fkr, &passes[LAYER_refl]);
 			}
-			ccg_color_assign(result, &passes[LAYER_refl]);
-			return(miTRUE);
+			if(whichlayer==LAYER_refl)
+			{
+				if(itransp.a!=1.0){
+					if(enableTransPass){
+						if(refracti==1.0)
+						{
+							state->refraction_level--;
+							if(!mi_trace_transparent(&tempColor, state)){
+								tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+							}
+						}else if(!ccg_color_compare(&refracted, &ccg_trans_black)){
+								mi_refraction_dir(&refr_dir, state, 1, refracti);
+								if(!mi_trace_refraction(&tempColor, state, &refr_dir))
+									tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+								ccg_color_multiply(&refracted, &tempColor, &tempColor);
+							  }else tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+						passes[LAYER_refl].r += transp.r * tempColor.r;
+						passes[LAYER_refl].g += transp.g * tempColor.g;
+						passes[LAYER_refl].b += transp.b * tempColor.b;
+					}
+				}
+				ccg_color_assign(result, &passes[LAYER_refl]);
+				return(miTRUE);
+			}
 		}
 
 		//PASS: refraction
 		if(whichlayer==LAYER_refr || whichlayer==LAYER_combined)
 		{
 			if(itransp.a!=1.0){
-				state->refraction_level--;
-				if(!mi_trace_transparent(&tempColor, state)){
-					tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
-				}
-				passes[LAYER_refr].r = transp->r * tempColor.r;
-				passes[LAYER_refr].g = transp->g * tempColor.g;
-				passes[LAYER_refr].b = transp->b * tempColor.b;
-				passes[LAYER_refr].a = transp->a * tempColor.a;
+				if(refracti==1.0)
+				{
+					state->refraction_level--;
+					if(!mi_trace_transparent(&tempColor, state)){
+						tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+					}
+				}else if(!ccg_color_compare(&refracted, &ccg_trans_black)){
+						mi_refraction_dir(&refr_dir, state, 1, refracti);
+						if(!mi_trace_refraction(&tempColor, state, &refr_dir))
+							tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+						ccg_color_multiply(&refracted, &tempColor, &tempColor);
+					  }else tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+				passes[LAYER_refr].r = transp.r * tempColor.r;
+				passes[LAYER_refr].g = transp.g * tempColor.g;
+				passes[LAYER_refr].b = transp.b * tempColor.b;
+				passes[LAYER_refr].a = transp.a * tempColor.a;
+				if(fresnelMode!=0) ccg_color_multiply_scalar(&passes[LAYER_refr], 1-fkr, &passes[LAYER_refr]);
 			}
 			if(whichlayer==LAYER_refr){
 				ccg_color_assign(result, &passes[LAYER_refr]);
@@ -698,13 +911,21 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 		if(whichlayer==LAYER_translucent){
 			if(itransp.a!=1.0){
 				if(enableTransPass){
-					state->refraction_level--;
-					if(!mi_trace_transparent(&tempColor, state)){
-						tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
-					}
-					passes[LAYER_translucent].r += transp->r * tempColor.r;
-					passes[LAYER_translucent].g += transp->g * tempColor.g;
-					passes[LAYER_translucent].b += transp->b * tempColor.b;
+					if(refracti==1.0)
+					{
+						state->refraction_level--;
+						if(!mi_trace_transparent(&tempColor, state)){
+							tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+						}
+					}else if(!ccg_color_compare(&refracted, &ccg_trans_black)){
+							mi_refraction_dir(&refr_dir, state, 1, refracti);
+							if(!mi_trace_refraction(&tempColor, state, &refr_dir))
+								tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+							ccg_color_multiply(&refracted, &tempColor, &tempColor);
+						  }else tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+					passes[LAYER_translucent].r += transp.r * tempColor.r;
+					passes[LAYER_translucent].g += transp.g * tempColor.g;
+					passes[LAYER_translucent].b += transp.b * tempColor.b;
 				}
 			}
 			ccg_color_assign(result, &passes[LAYER_translucent]);
@@ -714,9 +935,9 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 		//PASS: global illumination
 		if(whichlayer==LAYER_globillum || whichlayer==LAYER_combined){
 			mi_compute_avg_radiance(&passes[LAYER_globillum], state, 'f', NULL);
-			passes[LAYER_globillum].r *= diff * color->r * itransp.r;
-			passes[LAYER_globillum].g *= diff * color->g * itransp.g;
-			passes[LAYER_globillum].b *= diff * color->b * itransp.b;
+			passes[LAYER_globillum].r *= diff * color.r * itransp.r;
+			passes[LAYER_globillum].g *= diff * color.g * itransp.g;
+			passes[LAYER_globillum].b *= diff * color.b * itransp.b;
 			if(whichlayer==LAYER_globillum){
 				ccg_color_assign(result, &passes[LAYER_globillum]);
 				return(miTRUE);
@@ -734,7 +955,13 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 		if(whichlayer == LAYER_ao || (amb_add && whichlayer == LAYER_combined))
 		{
 			if(bent_normal.a!=-1) ccg_color_init(&passes[LAYER_ao], bent_normal.a);
-			else passes[LAYER_ao] = *ccg_mi_eval_color(state, &paras->ambientOcclusion);
+			else {
+					orig_state = state;
+					state_copy = *orig_state;
+					state = &state_copy;
+					passes[LAYER_ao] = *mi_eval_color(&paras->ambientOcclusion);
+					state = (miState*)orig_state;
+				}
 			if(amb_add)	ccg_color_multiply(&passes[LAYER_combined], &passes[LAYER_ao], &passes[LAYER_combined]);
 			if(whichlayer==LAYER_ao){
 				ccg_color_assign(result, &passes[LAYER_ao]);
@@ -745,7 +972,11 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 		//PASS: reflection occlusion
 		if(whichlayer == LAYER_reflao || (amb_add && whichlayer == LAYER_combined))
 		{
-			passes[LAYER_reflao] = *ccg_mi_eval_color(state, &paras->reflectOcclusion);
+			orig_state = state;
+			state_copy = *orig_state;
+			state = &state_copy;
+			passes[LAYER_reflao] = *mi_eval_color(&paras->reflectOcclusion);
+			state = (miState*)orig_state;
 			if(amb_add)	ccg_color_multiply(&passes[LAYER_refl], &passes[LAYER_reflao], &passes[LAYER_refl]);
 			if(whichlayer==LAYER_reflao){
 				ccg_color_assign(result, &passes[LAYER_reflao]);
@@ -756,13 +987,13 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 
 		//r
 		passes[LAYER_combined].r *= itransp.r;
-		passes[LAYER_combined].r += passes[LAYER_incan].r + passes[LAYER_spec].r + passes[LAYER_refr].r + passes[LAYER_globillum].r;
+		passes[LAYER_combined].r += passes[LAYER_incan].r + passes[LAYER_spec].r + passes[LAYER_refl].r + passes[LAYER_refr].r + passes[LAYER_globillum].r;
 		//g
 		passes[LAYER_combined].g *= itransp.g;
-		passes[LAYER_combined].g += passes[LAYER_incan].g + passes[LAYER_spec].g + passes[LAYER_refr].g + passes[LAYER_globillum].g;
+		passes[LAYER_combined].g += passes[LAYER_incan].g + passes[LAYER_spec].g + passes[LAYER_refl].g + passes[LAYER_refr].g + passes[LAYER_globillum].g;
 		//b
 		passes[LAYER_combined].b *= itransp.b;
-		passes[LAYER_combined].b += passes[LAYER_incan].b + passes[LAYER_spec].b + passes[LAYER_refr].b + passes[LAYER_globillum].b;
+		passes[LAYER_combined].b += passes[LAYER_incan].b + passes[LAYER_spec].b + passes[LAYER_refl].b + passes[LAYER_refr].b + passes[LAYER_globillum].b;
 		//a
 		passes[LAYER_combined].a = itransp.a + passes[LAYER_refr].a;
 
@@ -787,20 +1018,22 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 				size_t buffer_index;
 
 				//PASS: normal
-				if(state->type == miRAY_EYE) {
+				if(state->type == miRAY_EYE)
+				{	
 					tempColor.r = (state->normal.x + 1.0f)*0.5f;
 					tempColor.g = (state->normal.y + 1.0f)*0.5f;
 					tempColor.b = (state->normal.z + 1.0f)*0.5f;
 					tempColor.a = 1;
 					ccg_color_assign(&passes[LAYER_nor], &tempColor);
-					if((*fbarray)->passfbArray[LAYER_nor] && framebuffers->get_index(ccg_get_pass_name(buffer_name,LAYER_nor), buffer_index))	
+					if((*fbarray)->passfbArray[LAYER_nor] && framebuffers->get_index(ccg_get_pass_name(buffer_name,LAYER_nor), buffer_index))
 					{
 						mi_fb_put(state, buffer_index, &tempColor);
 					}
 				}
 
 				//PASS: depth
-				if(state->type == miRAY_EYE) {
+				if(state->type==miRAY_EYE)
+				{
 					zmin = *mi_eval_scalar(&paras->depthLimitMin);
 					zmax = *mi_eval_scalar(&paras->depthLimitMax);
 					if(zmin<0.0) zmin = 0.0;
@@ -814,6 +1047,29 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 						mi_fb_put(state, buffer_index, &tempColor);
 					}
 				}
+
+				//prepare fresnel coefficient
+				int fresnelMode =	*mi_eval_integer(&paras->fresnel_mode);
+				miBoolean f_diffuse	=	*mi_eval_boolean(&paras->fresnel_diffuse);
+				miBoolean f_specular	=	*mi_eval_boolean(&paras->fresnel_specular);
+				if(fresnelMode>0)
+				{
+					float nIncidence	=	*mi_eval_scalar(&paras->n_incidence);
+					float nTransmission	=	*mi_eval_scalar(&paras->n_transmission);
+					switch(fresnelMode){
+						case 0: //none of fresnel coefficient has been applied
+								break;
+						case 1: //apply mental ray default fresnel function
+								fkr = mi_fresnel_reflection(state, 1.0f, nTransmission/nIncidence);
+								break;
+						case 2:	//apply standard fresnel coefficient
+								fkr = ccg_fresnel_reflectance(state, nIncidence, nTransmission);
+								break;
+					}
+					float f_min = *mi_eval_scalar(&paras->fresnel_min);
+					float f_max = *mi_eval_scalar(&paras->fresnel_max);
+					if(f_max>f_min) ccg_smoothstep(f_min, f_max, fkr);
+				}else fkr = 1;
 
 				miColor		bent_normal;
 				bent_normal.a = -1;	//-1 used to decide if alpha contain occlusion info
@@ -832,16 +1088,22 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 					}
 					state = (miState*)orig_state;
 				}
+				if(f_diffuse&&fresnelMode!=0) ccg_color_multiply_scalar(&ambi, 1-fkr, &ambi);
 				ccg_color_assign(&passesCombined[LAYER_ambi],&ambi);
 				ccg_color_assign(&passes[LAYER_ambi],&ambi);
 
-				color	= mi_eval_color(&paras->color);
-				ccg_color_assign(&passesCombined[LAYER_col],color);
-				ccg_color_assign(&passes[LAYER_col],color);
-				incan	= mi_eval_color(&paras->incandescence);
-				ccg_color_assign(&passesCombined[LAYER_incan],incan);
-				ccg_color_assign(&passes[LAYER_incan],incan);
+				color	= *mi_eval_color(&paras->color);
+				ccg_color_assign(&passesCombined[LAYER_col],&color);
+				ccg_color_assign(&passes[LAYER_col],&color);
+				incan	= *mi_eval_color(&paras->incandescence);
+				ccg_color_assign(&passesCombined[LAYER_incan],&incan);
+				ccg_color_assign(&passes[LAYER_incan],&incan);
 				diff	=  *mi_eval_scalar(&paras->diffuse);
+				eccen	=	*mi_eval_scalar(&paras->eccentricity);
+				rolloff = *mi_eval_scalar(&paras->specularRolloff);
+				spec	=	*mi_eval_color(&paras->specular);
+				refracti	=	*mi_eval_scalar(&paras->refractiveIndex);
+				refracted	=	*mi_eval_color(&paras->refractedColor);
 				m     = *mi_eval_integer(&paras->mode);
 				n_l   = *mi_eval_integer(&paras->n_light);
 				i_l   = *mi_eval_integer(&paras->i_light);
@@ -863,15 +1125,24 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 					{
 						if(enableTransPass){
 							mystate->raystate = LAYER_col;
-							state->refraction_level--;
-							if(!mi_trace_transparent(&tempColor, state)){
-								tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
-							}
-							passes[LAYER_col].r = itransp.r * passes[LAYER_col].r + transp->r * tempColor.r;
-							passes[LAYER_col].g = itransp.g * passes[LAYER_col].g + transp->g * tempColor.g;
-							passes[LAYER_col].b = itransp.b * passes[LAYER_col].b + transp->b * tempColor.b;
-							passes[LAYER_col].a = itransp.a + transp->a * tempColor.a;
-							if(state->type==miRAY_EYE)	mystate->raystate = LAYER_RAY;
+							if(refracti==1.0)
+							{
+								state->refraction_level--;
+								if(!mi_trace_transparent(&tempColor, state)){
+									tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+								}
+							}else if(!ccg_color_compare(&refracted, &ccg_trans_black)){
+									mi_refraction_dir(&refr_dir, state, 1, refracti);
+									if(!mi_trace_refraction(&tempColor, state, &refr_dir))
+										tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+									ccg_color_multiply(&refracted, &tempColor, &tempColor);
+								  }else tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+							passes[LAYER_col].r = itransp.r * passes[LAYER_col].r + transp.r * tempColor.r;
+							passes[LAYER_col].g = itransp.g * passes[LAYER_col].g + transp.g * tempColor.g;
+							passes[LAYER_col].b = itransp.b * passes[LAYER_col].b + transp.b * tempColor.b;
+							passes[LAYER_col].a = itransp.a + transp.a * tempColor.a;
+							if(state->type==miRAY_EYE)//state->user_size = LAYER_RAY;
+								mystate->raystate = LAYER_RAY;
 						}else {
 								ccg_color_multiply(&passes[LAYER_col], &itransp, &passes[LAYER_col]);
 								passes[LAYER_col].a = itransp.a;
@@ -884,7 +1155,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 							mi_fb_put(state, buffer_index, &passes[LAYER_col]);
 						}
 					}
-					else{ 
+					else{
 							ccg_color_assign(result, &passes[LAYER_col]);
 							return(miTRUE);
 						}
@@ -893,18 +1164,26 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 				//PASS: incandescence
 				if(mystate->raystate==LAYER_incan || mystate->raystate==LAYER_RAY)
 				{
-					if(itransp.a!=1.0)
-					{
+					if(itransp.a!=1.0){
 						if(enableTransPass){
 							mystate->raystate = LAYER_incan;
-							state->refraction_level--;
-							if(!mi_trace_transparent(&tempColor, state)){
-								tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
-							}
-							passes[LAYER_incan].r += transp->r * tempColor.r;
-							passes[LAYER_incan].g += transp->g * tempColor.g;
-							passes[LAYER_incan].b += transp->b * tempColor.b;
-							if(state->type==miRAY_EYE)	mystate->raystate = LAYER_RAY;
+							if(refracti==1.0)
+							{
+								state->refraction_level--;
+								if(!mi_trace_transparent(&tempColor, state)){
+									tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+								}
+							}else if(!ccg_color_compare(&refracted, &ccg_trans_black)){
+									mi_refraction_dir(&refr_dir, state, 1, refracti);
+									if(!mi_trace_refraction(&tempColor, state, &refr_dir))
+										tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+									ccg_color_multiply(&refracted, &tempColor, &tempColor);
+								  }else tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+							passes[LAYER_incan].r += transp.r * tempColor.r;
+							passes[LAYER_incan].g += transp.g * tempColor.g;
+							passes[LAYER_incan].b += transp.b * tempColor.b;
+							if(state->type==miRAY_EYE)//state->user_size = LAYER_RAY;
+								mystate->raystate = LAYER_RAY;
 						}
 					}
 					if(state->type==miRAY_EYE)
@@ -926,13 +1205,21 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 					if(itransp.a!=1.0){
 						if(enableTransPass){
 							mystate->raystate = LAYER_sssfront;
-							state->refraction_level--;
-							if(!mi_trace_transparent(&tempColor, state)){
-								tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
-							}
-							passes[LAYER_sssfront].r += transp->r * tempColor.r;
-							passes[LAYER_sssfront].g += transp->g * tempColor.g;
-							passes[LAYER_sssfront].b += transp->b * tempColor.b;
+							if(refracti==1.0)
+							{
+								state->refraction_level--;
+								if(!mi_trace_transparent(&tempColor, state)){
+									tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+								}
+							}else if(!ccg_color_compare(&refracted, &ccg_trans_black)){
+									mi_refraction_dir(&refr_dir, state, 1, refracti);
+									if(!mi_trace_refraction(&tempColor, state, &refr_dir))
+										tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+									ccg_color_multiply(&refracted, &tempColor, &tempColor);
+								  }else tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+							passes[LAYER_sssfront].r += transp.r * tempColor.r;
+							passes[LAYER_sssfront].g += transp.g * tempColor.g;
+							passes[LAYER_sssfront].b += transp.b * tempColor.b;
 							if(state->type==miRAY_EYE) mystate->raystate = LAYER_RAY;
 						}
 					}
@@ -942,8 +1229,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 						{
 							mi_fb_put(state, buffer_index, &passes[LAYER_sssfront]);
 						}
-					}
-					else{ 
+					}else{ 
 							ccg_color_assign(result, &passes[LAYER_sssfront]);
 							return(miTRUE);
 						}
@@ -955,13 +1241,21 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 					if(itransp.a!=1.0){
 						if(enableTransPass){
 							mystate->raystate = LAYER_sssmiddle;
-							state->refraction_level--;
-							if(!mi_trace_transparent(&tempColor, state)){
-								tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
-							}
-							passes[LAYER_sssmiddle].r += transp->r * tempColor.r;
-							passes[LAYER_sssmiddle].g += transp->g * tempColor.g;
-							passes[LAYER_sssmiddle].b += transp->b * tempColor.b;
+							if(refracti==1.0)
+							{
+								state->refraction_level--;
+								if(!mi_trace_transparent(&tempColor, state)){
+									tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+								}
+							}else if(!ccg_color_compare(&refracted, &ccg_trans_black)){
+									mi_refraction_dir(&refr_dir, state, 1, refracti);
+									if(!mi_trace_refraction(&tempColor, state, &refr_dir))
+										tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+									ccg_color_multiply(&refracted, &tempColor, &tempColor);
+								  }else tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+							passes[LAYER_sssmiddle].r += transp.r * tempColor.r;
+							passes[LAYER_sssmiddle].g += transp.g * tempColor.g;
+							passes[LAYER_sssmiddle].b += transp.b * tempColor.b;
 							if(state->type==miRAY_EYE) mystate->raystate = LAYER_RAY;
 						}
 					}
@@ -984,13 +1278,21 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 					if(itransp.a!=1.0){
 						if(enableTransPass){
 							mystate->raystate = LAYER_sssback;
-							state->refraction_level--;
-							if(!mi_trace_transparent(&tempColor, state)){
-								tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
-							}
-							passes[LAYER_sssback].r += transp->r * tempColor.r;
-							passes[LAYER_sssback].g += transp->g * tempColor.g;
-							passes[LAYER_sssback].b += transp->b * tempColor.b;
+							if(refracti==1.0)
+							{
+								state->refraction_level--;
+								if(!mi_trace_transparent(&tempColor, state)){
+									tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+								}
+							}else if(!ccg_color_compare(&refracted, &ccg_trans_black)){
+									mi_refraction_dir(&refr_dir, state, 1, refracti);
+									if(!mi_trace_refraction(&tempColor, state, &refr_dir))
+										tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+									ccg_color_multiply(&refracted, &tempColor, &tempColor);
+								  }else tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+							passes[LAYER_sssback].r += transp.r * tempColor.r;
+							passes[LAYER_sssback].g += transp.g * tempColor.g;
+							passes[LAYER_sssback].b += transp.b * tempColor.b;
 							if(state->type==miRAY_EYE) mystate->raystate = LAYER_RAY;
 						}
 					}
@@ -1007,6 +1309,19 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 						}
 				}
 
+				E = state->dir;
+				mi_vector_neg(&E);
+				mi_vector_normalize(&E);
+				N = state->normal;
+				mi_vector_normalize(&N);
+				EN = mi_vector_dot(&E, &N);
+				
+				if (fabs(eccen) == 1.0f) eccen = 0.999999f;
+				eccen = 1.0f / (SQR(eccen) - 1.0f);
+				
+				if((spec.r==0.0&&spec.g==0.0&&spec.b==0.0)||eccen==0.0) specEntry = 0;
+				else specEntry = 1;
+
 				if (m == 1)   /* modify light list (inclusive mode) */
 					mi_inclusive_lightlist(&n_l, &light, state);
 				else if (m == 2)  /* modify light list (exclusive mode) */
@@ -1017,7 +1332,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 				}
 
 				/* Loop over all light sources */
-				if(mystate->raystate==LAYER_combined || mystate->raystate==LAYER_diff || mystate->raystate==LAYER_RAY || mystate->raystate==LAYER_withoutShadow)
+				if(mystate->raystate==LAYER_combined || mystate->raystate==LAYER_diff || mystate->raystate==LAYER_spec || mystate->raystate==LAYER_RAY || mystate->raystate==LAYER_withoutShadow)
 				{
 					again_light = light;
 					/*	without shadow *****************************************/
@@ -1050,10 +1365,12 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 								}
 								samples = iter->get_number_of_samples();
 								if (samples) {
-									withoutShadow.r += sum.r / samples * diff;
-									withoutShadow.g += sum.g / samples * diff;
-									withoutShadow.b += sum.b / samples * diff;
-									ccg_color_assign(&passes[LAYER_diff], &withoutShadow);
+									sum.r = sum.r / samples * diff;
+									sum.g = sum.g / samples * diff;
+									sum.b = sum.b / samples * diff;
+									if(f_diffuse&&fresnelMode!=0) ccg_color_multiply_scalar(&sum, 1-fkr, &sum);
+									ccg_color_add(&withoutShadow, &sum, &withoutShadow);
+									ccg_color_add(&passes[LAYER_diff], &sum, &passes[LAYER_diff]);
 								}
 							}
 						}
@@ -1062,7 +1379,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 
 					light = again_light;
 					/*	with shadow *****************************************/
-					if(mystate->raystate==LAYER_combined || mystate->raystate==LAYER_RAY || mystate->raystate==LAYER_diff)
+					if(mystate->raystate==LAYER_combined || mystate->raystate==LAYER_RAY || mystate->raystate==LAYER_diff || mystate->raystate==LAYER_spec)
 					{
 						/*orig_option = state->options;
 						option_copy = *orig_option;
@@ -1071,6 +1388,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 						if (m == 4 || n_l) {
 							for (mi::shader::LightIterator iter(state, light, n_l);!iter.at_end(); ++iter) {
 								ccg_color_init(&sum, 0);
+								ccg_color_init(&spe, 0);
 								while (iter->sample()) {
 									//get custom maya light properties
 									if (mayabase_stateitem_get(state,
@@ -1081,21 +1399,43 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 										emitSpecular = *mayaStateSpecular;
 									}
 									iter->get_contribution(&lightColor);
+									dir = iter->get_direction();
 									dot_nl = iter->get_dot_nl();
 									/* Lambert's cosine law */
-									if(emitDiffuse)
+									if(emitDiffuse && (mystate->raystate==LAYER_combined||mystate->raystate==LAYER_diff || mystate->raystate==LAYER_RAY))
 									{
 										sum.r += dot_nl * lightColor.r;
 										sum.g += dot_nl * lightColor.g;
 										sum.b += dot_nl * lightColor.b;
 									}
+									
+									/* specular reflection: maya blinn specular model */
+									if(emitSpecular && (mystate->raystate==LAYER_combined||mystate->raystate==LAYER_spec||mystate->raystate==LAYER_RAY))
+									{
+										if(specEntry) {
+											s = ccg_SC_specular_blinn(eccen, rolloff, N, dir, E, dot_nl, EN);
+											if (s > 1e-5) {
+													spe.r += s * lightColor.r;
+													spe.g += s * lightColor.g;
+													spe.b += s * lightColor.b;
+											}
+										}
+									}
 								}
 								samples = iter->get_number_of_samples();
 								if (samples) {
-									passesCombined[LAYER_diff].r += sum.r / samples * diff;
-									passesCombined[LAYER_diff].g += sum.g / samples * diff;
-									passesCombined[LAYER_diff].b += sum.b / samples * diff;
+									sum.r = sum.r / samples * diff;
+									sum.g = sum.g / samples * diff;
+									sum.b = sum.b / samples * diff;
+									if(f_diffuse&&fresnelMode!=0) ccg_color_multiply_scalar(&sum, 1-fkr, &sum);
+									ccg_color_add(&passesCombined[LAYER_diff], &sum, &passesCombined[LAYER_diff]);
 									ccg_color_assign(&withShadow, &passesCombined[LAYER_diff]);
+									spe.r = spe.r / samples * spec.r;
+									spe.g = spe.g / samples * spec.g;
+									spe.b = spe.b / samples * spec.b;
+									if(f_specular&&fresnelMode!=0) ccg_color_multiply_scalar(&spe, fkr, &spe);
+									ccg_color_add(&passesCombined[LAYER_spec], &spe, &passesCombined[LAYER_spec]);
+									ccg_color_assign(&passes[LAYER_spec], &passesCombined[LAYER_spec]);
 								}
 							}
 						}
@@ -1104,13 +1444,14 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 
 					//start image based lighting
 					miBoolean ibl_emit_diff =	*mi_eval_boolean(&paras->ibl_emit_diffuse);
-					if(ibl_en==3 && ibl_emit_diff)
+					miBoolean ibl_emit_spec	=	*mi_eval_boolean(&paras->ibl_emit_specular);
+					if(ibl_en==3 && (ibl_emit_diff || ibl_emit_spec))
 					{
 						orig_state = state;
 						state_copy = *orig_state;
 						state = &state_copy;
 
-						miColor		bent_normal =	*mi_eval_color(&paras->bent);
+						bent_normal =	*mi_eval_color(&paras->bent);
 						miInteger	shadow_mode	=	*mi_eval_integer(&paras->ibl_shadow_mode);
 						float		min			=	*mi_eval_scalar(&paras->min_dist);
 						float		max			=	*mi_eval_scalar(&paras->max_dist);
@@ -1119,25 +1460,8 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 						miScalar	occ_alpha	=	bent_normal.a;
 						miVector	bent_vector, bent_i;
 
-						bent_vector.x = (bent_normal.r * 2.0f) - 1.0f;
-						bent_vector.y = (bent_normal.g * 2.0f) - 1.0f;
-						bent_vector.z = (bent_normal.b * 2.0f) - 1.0f;
-						mi_vector_normalize(&bent_vector);
-
-						switch(*mi_eval_integer(&paras->bent_space)) {
-							case 0: /* World */
-								mi_normal_from_world(state, &bent_i, &bent_vector);
-								break;
-							case 1: /* Camera */
-								mi_normal_from_camera(state, &bent_i, &bent_vector);
-								break;
-							case 2: /* Object */
-								mi_normal_from_object(state, &bent_i, &bent_vector);
-								break;
-							case 3: /* No change */
-								bent_i = bent_vector;
-								break;
-						}
+						ccg_colormap2Vector(&bent_normal, &bent_vector);
+						ccg_bent_space_conversion(state, *mi_eval_integer(&paras->bent_space), &bent_i, &bent_vector);
 
 						double self;
 						self = state->shadow_tol;
@@ -1160,6 +1484,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 							  }else if(shadow_mode==2) factor = 1;
 
 						ccg_color_init(&sum, 0);		//here sum as diffuse with shadow now
+						ccg_color_init(&spe, 0);
 						ccg_color_init(&tempColor, 0); //here tempColor as diffuse without shadow now
 						if(mi_trace_environment(&lightColor, state, &bent_i)) {
 							dot_nl = mi_vector_dot(&state->normal, &bent_i);
@@ -1174,6 +1499,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 									tempColor.r = dot_nl * lightColor.r * diff;
 									tempColor.g = dot_nl * lightColor.g * diff;
 									tempColor.b = dot_nl * lightColor.b * diff;
+									if(f_diffuse&&fresnelMode!=0) ccg_color_multiply_scalar(&tempColor, 1-fkr, &tempColor);
 									if(mystate->raystate==LAYER_RAY || mystate->raystate==LAYER_withoutShadow)
 									{
 										ccg_color_add(&withoutShadow, &tempColor, &withoutShadow);
@@ -1184,6 +1510,20 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 										ccg_color_multiply(&tempColor, &f, &sum);
 										ccg_color_add(&passesCombined[LAYER_diff], &sum, &passesCombined[LAYER_diff]);
 										ccg_color_assign(&withShadow, &passesCombined[LAYER_diff]);
+									}
+								}
+
+								if(ibl_emit_spec && (mystate->raystate==LAYER_combined||mystate->raystate==LAYER_spec||mystate->raystate==LAYER_RAY)) {
+									if(specEntry) {
+										s = ccg_SC_specular_blinn(eccen, rolloff, N, bent_i, E, dot_nl, EN);
+										if (s > 1e-5) {
+											spe.r = s * lightColor.r * spec.r * f.r;
+											spe.g = s * lightColor.g * spec.g * f.g;
+											spe.b = s * lightColor.b * spec.b * f.b;
+											if(f_diffuse&&fresnelMode!=0) ccg_color_multiply_scalar(&spe, fkr, &spe);
+											ccg_color_add(&passesCombined[LAYER_spec], &spe, &passesCombined[LAYER_spec]);
+											ccg_color_assign(&passes[LAYER_spec], &passesCombined[LAYER_spec]);
+										}
 									}
 								}
 							}
@@ -1238,6 +1578,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 												sum.r = sum.r / samples * diff;
 												sum.g = sum.g / samples * diff;
 												sum.b = sum.b / samples * diff;
+												if(f_diffuse&&fresnelMode!=0) ccg_color_multiply_scalar(&sum, 1-fkr, &sum);
 												ccg_color_add(&withoutShadow, &sum, &withoutShadow);
 												ccg_color_add(&passes[LAYER_diff], &sum, &passes[LAYER_diff]);
 											}
@@ -1248,7 +1589,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 
 								/* with shadow */
 								iblTag = (*fbarray)->lightTag;
-								if(mystate->raystate==LAYER_combined || mystate->raystate==LAYER_RAY || mystate->raystate==LAYER_diff)
+								if(mystate->raystate==LAYER_combined || mystate->raystate==LAYER_RAY || mystate->raystate==LAYER_diff || mystate->raystate==LAYER_spec)
 								{
 									/*orig_option = state->options;
 									option_copy = *orig_option;
@@ -1269,6 +1610,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 										if(mi_vector_dot(&state->normal, &lightDir) >= (*fbarray)->angle)
 										{
 											ccg_color_init(&sum, 0);
+											ccg_color_init(&spe, 0);
 											samples = 0;
 											while (mi_sample_light(&lightColor, &dir, &dot_nl, state, *iblTag, &samples)) {
 												//get custom maya light properties
@@ -1280,18 +1622,36 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 													emitSpecular = *mayaStateSpecular;
 												}
 												/* Lambert's cosine law */
-												if(emitDiffuse) {
+												if(emitDiffuse && (mystate->raystate==LAYER_combined||mystate->raystate==LAYER_diff || mystate->raystate==LAYER_RAY)) {
 													sum.r += dot_nl * lightColor.r;
 													sum.g += dot_nl * lightColor.g;
 													sum.b += dot_nl * lightColor.b;
+												}
+												/* specular reflection: maya blinn specular model */
+												if(emitSpecular && (mystate->raystate==LAYER_combined||mystate->raystate==LAYER_spec||mystate->raystate==LAYER_RAY)) {
+													if(specEntry) {
+														s = ccg_SC_specular_blinn(eccen, rolloff, N, dir, E, dot_nl, EN);
+														if (s > 1e-5) {
+																spe.r += s * lightColor.r;
+																spe.g += s * lightColor.g;
+																spe.b += s * lightColor.b;
+														}
+													}
 												}
 											}
 											if (samples) {
 												sum.r = sum.r / samples * diff;
 												sum.g = sum.g / samples * diff;
 												sum.b = sum.b / samples * diff;
+												if(f_diffuse&&fresnelMode!=0) ccg_color_multiply_scalar(&sum, 1-fkr, &sum);
 												ccg_color_add(&passesCombined[LAYER_diff], &sum, &passesCombined[LAYER_diff]);
 												ccg_color_assign(&withShadow, &passesCombined[LAYER_diff]);
+												spe.r = spe.r / samples * spec.r;
+												spe.g = spe.g / samples * spec.g;
+												spe.b = spe.b / samples * spec.b;
+												if(f_specular&&fresnelMode!=0) ccg_color_multiply_scalar(&spe, fkr, &spe);
+												ccg_color_add(&passesCombined[LAYER_spec], &spe, &passesCombined[LAYER_spec]);
+												ccg_color_assign(&passes[LAYER_spec], &passesCombined[LAYER_spec]);
 											}
 										}
 									}
@@ -1317,15 +1677,21 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 									option_copy.shadow = 0;
 									state->options = &option_copy;
 									mystate->raystate = LAYER_withoutShadow;
-									state->refraction_level--;
-									if(!mi_trace_transparent(&tempColor, state))
+									if(refracti==1.0)
 									{
-										tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
-									}
-									withoutShadow.r = itransp.r * withoutShadow.r + transp->r * tempColor.r;
-									withoutShadow.g = itransp.g * withoutShadow.g + transp->g * tempColor.g;
-									withoutShadow.b = itransp.b * withoutShadow.b + transp->b * tempColor.b;
-									withoutShadow.a = itransp.a + transp->a * tempColor.a;
+										state->refraction_level--;
+										if(!mi_trace_transparent(&tempColor, state)){
+											tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+										}
+									}else {
+											mi_refraction_dir(&refr_dir, state, 1, refracti);
+											if(!mi_trace_refraction(&tempColor, state, &refr_dir))
+												tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+										  }
+									withoutShadow.r = itransp.r * withoutShadow.r + transp.r * tempColor.r;
+									withoutShadow.g = itransp.g * withoutShadow.g + transp.g * tempColor.g;
+									withoutShadow.b = itransp.b * withoutShadow.b + transp.b * tempColor.b;
+									withoutShadow.a = itransp.a + transp.a * tempColor.a;
 									ccg_color_assign(&passes[LAYER_diff], &withoutShadow);
 									if(state->type==miRAY_EYE){
 										mystate->raystate = LAYER_RAY;}
@@ -1335,15 +1701,21 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 								if(mystate->raystate==LAYER_diff || mystate->raystate==LAYER_RAY)
 								{
 									mystate->raystate = LAYER_diff;
-									state->refraction_level--;
-									if(!mi_trace_transparent(&tempColor, state))
+									if(refracti==1.0)
 									{
-										tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
-									}
-									withShadow.r = itransp.r * withShadow.r + transp->r * tempColor.r;
-									withShadow.g = itransp.g * withShadow.g + transp->g * tempColor.g;
-									withShadow.b = itransp.b * withShadow.b + transp->b * tempColor.b;
-									withShadow.a = itransp.a + transp->a * tempColor.a;
+										state->refraction_level--;
+										if(!mi_trace_transparent(&tempColor, state)){
+											tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+										}
+									}else {
+											mi_refraction_dir(&refr_dir, state, 1, refracti);
+											if(!mi_trace_refraction(&tempColor, state, &refr_dir))
+												tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+										  }
+									withShadow.r = itransp.r * withShadow.r + transp.r * tempColor.r;
+									withShadow.g = itransp.g * withShadow.g + transp.g * tempColor.g;
+									withShadow.b = itransp.b * withShadow.b + transp.b * tempColor.b;
+									withShadow.a = itransp.a + transp.a * tempColor.a;
 									if(state->type==miRAY_EYE){
 										mystate->raystate = LAYER_RAY;}
 								}
@@ -1378,20 +1750,28 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 				}
 
 				//PASS: specular
-				//although lambert doesn't contribute specular, you cann't refuse the specular from other behind it which appear transparent.
-				if(mystate->raystate==LAYER_spec || mystate->raystate==LAYER_RAY){
-					if(itransp.a!=1.0)
-					{
+				if(mystate->raystate==LAYER_spec || mystate->raystate==LAYER_RAY)
+				{
+					if(itransp.a!=1.0){
 						if(enableTransPass){
 							mystate->raystate = LAYER_spec;
-							state->refraction_level--;
-							if(!mi_trace_transparent(&tempColor, state)){
-								tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
-							}
-							passes[LAYER_spec].r += transp->r * tempColor.r;
-							passes[LAYER_spec].g += transp->g * tempColor.g;
-							passes[LAYER_spec].b += transp->b * tempColor.b;
-							if(state->type==miRAY_EYE)	mystate->raystate = LAYER_RAY;
+							if(refracti==1.0)
+								{
+									state->refraction_level--;
+									if(!mi_trace_transparent(&tempColor, state)){
+										tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+									}
+								}else if(!ccg_color_compare(&refracted, &ccg_trans_black)){
+										mi_refraction_dir(&refr_dir, state, 1, refracti);
+										if(!mi_trace_refraction(&tempColor, state, &refr_dir))
+											tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+										ccg_color_multiply(&refracted, &tempColor, &tempColor);
+									  }else tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+							passes[LAYER_spec].r += transp.r * tempColor.r;
+							passes[LAYER_spec].g += transp.g * tempColor.g;
+							passes[LAYER_spec].b += transp.b * tempColor.b;
+							if(state->type==miRAY_EYE)	//state->user_size = LAYER_RAY;
+								mystate->raystate = LAYER_RAY;
 						}
 					}
 					if(state->type==miRAY_EYE)
@@ -1401,40 +1781,78 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 							mi_fb_put(state, buffer_index, &passes[LAYER_spec]);
 						}
 					}
-					else{
+					else{ 
 							ccg_color_assign(result, &passes[LAYER_spec]);
 							return(miTRUE);
 						}
 				}
 
 				//PASS: reflection
-				if(mystate->raystate==LAYER_refl || mystate->raystate==LAYER_RAY)
+  				rayRefl		=	*mi_eval_boolean(&paras->disableRayRefl);
+				reflecti	=	*mi_eval_color(&paras->reflectivity);
+				reflcoeff = ccg_SC_reflect_blinn(rolloff, EN);
+				reflecti.r *= spec.r * reflcoeff;
+				reflecti.g *= spec.g * reflcoeff;
+				reflecti.b *= spec.b * reflcoeff;
+				reflected	=	*mi_eval_color(&paras->reflectedColor);
+				in_refl		=	*mi_eval_integer(&paras->insideReflectLimit);
+				if(mystate->raystate==LAYER_refl || mystate->raystate==LAYER_combined || mystate->raystate==LAYER_RAY)
 				{
-					if(itransp.a!=1.0)
+					if(!ccg_color_compare(&reflecti, &ccg_solid_black))
 					{
-						if(enableTransPass){
-							mystate->raystate = LAYER_refl;
-							state->refraction_level--;
-							if(!mi_trace_transparent(&tempColor, state)){
-								tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
-							}
-							passes[LAYER_refl].r += transp->r * tempColor.r;
-							passes[LAYER_refl].g += transp->g * tempColor.g;
-							passes[LAYER_refl].b += transp->b * tempColor.b;
-							if(state->type==miRAY_EYE)	mystate->raystate = LAYER_RAY;
-						}
-					}
-					if(state->type==miRAY_EYE)
-					{
-						if((*fbarray)->passfbArray[LAYER_refl] && framebuffers->get_index(ccg_get_pass_name(buffer_name,LAYER_refl), buffer_index))
+						if(!rayRefl && (!state->inv_normal || state->reflection_level<in_refl))
 						{
-							mi_fb_put(state, buffer_index, &passes[LAYER_refl]);
-						}
+							tmpInt = mystate->raystate;
+							mi_reflection_dir(&dir, state);
+							mystate->raystate = LAYER_combined;
+							if(mi_trace_reflection(&tempColor, state, &dir) && (state->child && state->child->dist>0.0f)) ccg_color_multiply(&tempColor, &reflecti, &passesCombined[LAYER_refl]);
+							else if(!ccg_color_compare(&reflected, &ccg_solid_black)) ccg_color_multiply(&reflected, &reflecti, &passesCombined[LAYER_refl]);
+								else if(mi_trace_environment(&tempColor, state, &dir)) ccg_color_multiply(&tempColor, &reflecti, &passesCombined[LAYER_refl]);
+							if(state->type==miRAY_EYE)	mystate->raystate = LAYER_RAY;
+							else mystate->raystate = tmpInt;
+						}else if(!ccg_color_compare(&reflected, &ccg_solid_black))
+									ccg_color_multiply(&reflected, &reflecti, &passesCombined[LAYER_refl]);
+						if(fresnelMode!=0)ccg_color_multiply_scalar(&passesCombined[LAYER_refl], fkr, &passesCombined[LAYER_refl]);
+						ccg_color_assign(&passes[LAYER_refl], &passesCombined[LAYER_refl]);
 					}
-					else{ 
-							ccg_color_assign(result, &passes[LAYER_refl]);
-							return(miTRUE);
+
+					if(mystate->raystate==LAYER_refl || mystate->raystate==LAYER_RAY)
+					{
+						if(itransp.a!=1.0)
+						{
+							if(enableTransPass){
+							mystate->raystate = LAYER_refl;
+								if(refracti==1.0)
+								{
+									state->refraction_level--;
+									if(!mi_trace_transparent(&tempColor, state)){
+										tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+									}
+								}else if(!ccg_color_compare(&refracted, &ccg_trans_black)){
+										mi_refraction_dir(&refr_dir, state, 1, refracti);
+										if(!mi_trace_refraction(&tempColor, state, &refr_dir))
+											tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+										ccg_color_multiply(&refracted, &tempColor, &tempColor);
+									  }else tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+								passes[LAYER_refl].r += transp.r * tempColor.r;
+								passes[LAYER_refl].g += transp.g * tempColor.g;
+								passes[LAYER_refl].b += transp.b * tempColor.b;
+								if(state->type==miRAY_EYE)
+									mystate->raystate = LAYER_RAY;
+							}
 						}
+						if(state->type==miRAY_EYE)
+						{
+							if((*fbarray)->passfbArray[LAYER_refl] && framebuffers->get_index(ccg_get_pass_name(buffer_name,LAYER_refl), buffer_index))
+							{
+								mi_fb_put(state, buffer_index, &passes[LAYER_refl]);
+							}
+						}
+						else{
+								ccg_color_assign(result, &passes[LAYER_refl]);
+								return(miTRUE);
+							}
+					}
 				}
 
 				//PASS: refraction
@@ -1443,14 +1861,23 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 					if(itransp.a!=1.0f){
 						//mystate->raystate = LAYER_combined;
 						mystate->scope = CCG_SCOPE_DISABLE_PASS;
-						state->refraction_level--;
-						if(!mi_trace_transparent(&tempColor, state)){
-							tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
-						}
-						passesCombined[LAYER_refr].r = transp->r * tempColor.r;
-						passesCombined[LAYER_refr].g = transp->g * tempColor.g;
-						passesCombined[LAYER_refr].b = transp->b * tempColor.b;
-						passesCombined[LAYER_refr].a = transp->a * tempColor.a;
+						if(refracti==1.0f)
+						{
+							state->refraction_level--;
+							if(!mi_trace_transparent(&tempColor, state)){
+								tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+							}
+						}else if(!ccg_color_compare(&refracted, &ccg_trans_black)){
+								mi_refraction_dir(&refr_dir, state, 1, refracti);
+								if(!mi_trace_refraction(&tempColor, state, &refr_dir))
+									tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+								ccg_color_multiply(&refracted, &tempColor, &tempColor);
+							  }else tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+						passesCombined[LAYER_refr].r = transp.r * tempColor.r;
+						passesCombined[LAYER_refr].g = transp.g * tempColor.g;
+						passesCombined[LAYER_refr].b = transp.b * tempColor.b;
+						passesCombined[LAYER_refr].a = transp.a * tempColor.a;
+						if(fresnelMode!=0) ccg_color_multiply_scalar(&passesCombined[LAYER_refr], 1-fkr, &passesCombined[LAYER_refr]);
 						//if(state->type==miRAY_EYE) mystate->raystate = LAYER_RAY;
 						mystate->scope = CCG_SCOPE_ENABLE_PASS;
 					}
@@ -1471,13 +1898,21 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 					if(itransp.a!=1.0){
 						if(enableTransPass){
 							mystate->raystate = LAYER_translucent;
-							state->refraction_level--;
-							if(!mi_trace_transparent(&tempColor, state)){
-								tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
-							}
-							passes[LAYER_translucent].r += transp->r * tempColor.r;
-							passes[LAYER_translucent].g += transp->g * tempColor.g;
-							passes[LAYER_translucent].b += transp->b * tempColor.b;
+							if(refracti==1.0)
+							{
+								state->refraction_level--;
+								if(!mi_trace_transparent(&tempColor, state)){
+									tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+								}
+							}else if(!ccg_color_compare(&refracted, &ccg_trans_black)){
+									mi_refraction_dir(&refr_dir, state, 1, refracti);
+									if(!mi_trace_refraction(&tempColor, state, &refr_dir))
+										tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+									ccg_color_multiply(&refracted, &tempColor, &tempColor);
+								  }else tempColor.r = tempColor.g = tempColor.b = tempColor.a = 0.0;
+							passes[LAYER_translucent].r += transp.r * tempColor.r;
+							passes[LAYER_translucent].g += transp.g * tempColor.g;
+							passes[LAYER_translucent].b += transp.b * tempColor.b;
 							if(state->type==miRAY_EYE) mystate->raystate = LAYER_RAY;
 						}
 					}
@@ -1496,9 +1931,9 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 				//PASS: global illumination
 				if(mystate->raystate==LAYER_combined || mystate->raystate==LAYER_RAY){
 					mi_compute_avg_radiance(&passesCombined[LAYER_globillum], state, 'f', NULL);
-					passesCombined[LAYER_globillum].r *= diff * color->r * itransp.r;
-					passesCombined[LAYER_globillum].g *= diff * color->g * itransp.g;
-					passesCombined[LAYER_globillum].b *= diff * color->b * itransp.b;
+					passesCombined[LAYER_globillum].r *= diff * color.r * itransp.r;
+					passesCombined[LAYER_globillum].g *= diff * color.g * itransp.g;
+					passesCombined[LAYER_globillum].b *= diff * color.b * itransp.b;
 					ccg_color_assign(&passes[LAYER_globillum], &passesCombined[LAYER_globillum]);
 					if(state->type==miRAY_EYE)
 					{
@@ -1520,14 +1955,24 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 				{
 					miBoolean amb_add = *mi_eval_boolean(&paras->add_to_combined);
 					if(bent_normal.a!=-1) ccg_color_init(&passes[LAYER_ao], bent_normal.a);
-					else passes[LAYER_ao] = *ccg_mi_eval_color(state, &paras->ambientOcclusion);
+					else {
+							orig_state = state;
+							state_copy = *orig_state;
+							state = &state_copy;
+							passes[LAYER_ao] = *mi_eval_color(&paras->ambientOcclusion);
+							state = (miState*)orig_state;
+						}
 					if((*fbarray)->passfbArray[LAYER_ao] && framebuffers->get_index(ccg_get_pass_name(buffer_name,LAYER_ao), buffer_index))
 					{
 						mi_fb_put(state, buffer_index, &passes[LAYER_ao]);
 					}
 					if(amb_add)	ccg_color_multiply(&passesCombined[LAYER_combined], &passes[LAYER_ao], &passesCombined[LAYER_combined]);
 
-					passes[LAYER_reflao] = *ccg_mi_eval_color(state, &paras->reflectOcclusion);
+					orig_state = state;
+					state_copy = *orig_state;
+					state = &state_copy;
+					passes[LAYER_reflao] = *mi_eval_color(&paras->reflectOcclusion);
+					state = (miState*)orig_state;
 					if((*fbarray)->passfbArray[LAYER_reflao] && framebuffers->get_index(ccg_get_pass_name(buffer_name,LAYER_reflao), buffer_index))
 					{
 						mi_fb_put(state, buffer_index, &passes[LAYER_reflao]);
@@ -1538,13 +1983,13 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 
 				//r
 				passesCombined[LAYER_combined].r *= itransp.r;
-				passesCombined[LAYER_combined].r += passesCombined[LAYER_incan].r + passesCombined[LAYER_spec].r + passesCombined[LAYER_refr].r + passesCombined[LAYER_globillum].r;
+				passesCombined[LAYER_combined].r += passesCombined[LAYER_incan].r + passesCombined[LAYER_spec].r + passesCombined[LAYER_refl].r + passesCombined[LAYER_refr].r + passesCombined[LAYER_globillum].r;
 				//g
 				passesCombined[LAYER_combined].g *= itransp.g;
-				passesCombined[LAYER_combined].g += passesCombined[LAYER_incan].g + passesCombined[LAYER_spec].g + passesCombined[LAYER_refr].g + passesCombined[LAYER_globillum].g;
+				passesCombined[LAYER_combined].g += passesCombined[LAYER_incan].g + passesCombined[LAYER_spec].g + passesCombined[LAYER_refl].g + passesCombined[LAYER_refr].g + passesCombined[LAYER_globillum].g;
 				//b
 				passesCombined[LAYER_combined].b *= itransp.b;
-				passesCombined[LAYER_combined].b += passesCombined[LAYER_incan].b + passesCombined[LAYER_spec].b + passesCombined[LAYER_refr].b + passesCombined[LAYER_globillum].b;
+				passesCombined[LAYER_combined].b += passesCombined[LAYER_incan].b + passesCombined[LAYER_spec].b + passesCombined[LAYER_refl].b + passesCombined[LAYER_refr].b + passesCombined[LAYER_globillum].b;
 				//a
 				passesCombined[LAYER_combined].a = itransp.a + passesCombined[LAYER_refr].a;
 
@@ -1558,7 +2003,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 				result->g = passes[LAYER_combined].g;
 				result->b = passes[LAYER_combined].b;
 				result->a = passes[LAYER_combined].a;
-			  
+				
 				return(miTRUE);
 		  }
 
@@ -1567,6 +2012,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_lambert(
 	result->g = passes[whichlayer].g;
 	result->b = passes[whichlayer].b;
 	result->a = passes[whichlayer].a;
-  
+	
 	return(miTRUE);
 }
+

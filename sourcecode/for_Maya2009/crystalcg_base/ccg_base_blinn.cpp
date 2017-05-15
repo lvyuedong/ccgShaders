@@ -55,6 +55,7 @@ struct ccg_base_blinn {
 	miBoolean	passesInOnce;
 	miBoolean	diffuseOpacity;
 	miTag		fbWriteString;
+	miBoolean	disableShadowChain;
 	int			mode;		/* light mode: 0..2 */
 	int			i_light;	/* index of first light */
 	int			n_light;	/* number of lights */
@@ -230,7 +231,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_blinn(
 	//copyright: miColor	copyright;
 	miColor		passes[LAYER_NUM], passesCombined[LAYER_NUM];
 	miScalar	zmin,zmax,z;    /* limitation of depth */
-	miBoolean	enableTransPass, specEntry, rayRefl, passesOnce, amb_add, diffOpacity;
+	miBoolean	enableTransPass, specEntry, rayRefl, passesOnce, diffOpacity;
 	int			i,tmpInt;
 	miVector	normalbend, refr_dir;
 	struct ccg_passfbArray **fbarray;
@@ -262,31 +263,26 @@ extern "C" DLLEXPORT miBoolean ccg_base_blinn(
 
 	if (state->type == miRAY_SHADOW)
 	{
-		if(state->options->shadow=='s')
-  		{
-			if(itransp.a!=1.0)
-			{
-				ccg_shadow_choose_volume(state);
-				mi_trace_shadow_seg(result, state);
-				result->r *= transp->r;
-				result->g *= transp->g;
-  				result->b *= transp->b;
-				result->a *= transp->a;
-				return(miTRUE);
-			}else {
-					result->r = result->g = result->b = result->a = 1;
-					return(miFALSE);
-				  }
-		}
 		if(itransp.a!=1.0)
-  		{
-			result->r *= transp->r;
-			result->g *= transp->g;
-  			result->b *= transp->b;
-			result->a *= transp->a;
-  			return(miTRUE);
-  		}else {
-				result->r = result->g = result->b = result->a = 1;
+		{
+			if(*mi_eval_boolean(&paras->disableShadowChain)){
+				result->r = transp->r;
+				result->g = transp->g;
+				result->b = transp->b;
+				result->a = transp->a;
+			}else {
+						if(state->options->shadow=='s'){
+							ccg_shadow_choose_volume(state);
+							mi_trace_shadow_seg(result, state);
+						}
+						result->r *= transp->r;
+						result->g *= transp->g;
+						result->b *= transp->b;
+						result->a *= transp->a;
+				  }
+			return(miTRUE);
+		}else {
+				result->r = result->g = result->b = result->a = 0;
 				return(miFALSE);
 			  }
 	}
@@ -885,7 +881,8 @@ extern "C" DLLEXPORT miBoolean ccg_base_blinn(
 				if(!rayRefl && (!state->inv_normal || state->reflection_level<in_refl))
 				{
 					mi_reflection_dir(&dir, state);
-					if(mi_trace_reflection(&tempColor, state, &dir)) ccg_color_multiply(&tempColor, reflecti, &passes[LAYER_refl]);
+					//we look at state->child to decide whether reflect ray hit object
+					if(mi_trace_reflection(&tempColor, state, &dir) && (state->child && state->child->dist>0.0f) ) ccg_color_multiply(&tempColor, reflecti, &passes[LAYER_refl]);
 					else if(!ccg_color_compare(reflected, &ccg_solid_black)) ccg_color_multiply(reflected, reflecti, &passes[LAYER_refl]);
 							else if(mi_trace_environment(&tempColor, state, &dir)) ccg_color_multiply(&tempColor, reflecti, &passes[LAYER_refl]);
 				}else if(!ccg_color_compare(reflected, &ccg_solid_black))
@@ -988,12 +985,19 @@ extern "C" DLLEXPORT miBoolean ccg_base_blinn(
 		passes[LAYER_combined].g = passes[LAYER_col].g * (passes[LAYER_diff].g + passes[LAYER_ambi].g);
 		passes[LAYER_combined].b = passes[LAYER_col].b * (passes[LAYER_diff].b + passes[LAYER_ambi].b);
 
+		/*
 		//PASS: ambient occlusion
-		amb_add	= *mi_eval_boolean(&paras->add_to_combined);
+		miBoolean amb_add	= *mi_eval_boolean(&paras->add_to_combined);
 		if(whichlayer == LAYER_ao || (amb_add && whichlayer == LAYER_combined))
 		{
 			if(bent_normal.a!=-1) ccg_color_init(&passes[LAYER_ao], bent_normal.a);
-			else passes[LAYER_ao] = *ccg_mi_eval_color(state, &paras->ambientOcclusion);
+			else {
+					orig_state = state;
+					state_copy = *orig_state;
+					state = &state_copy;
+					passes[LAYER_ao] = *mi_eval_color(&paras->ambientOcclusion);
+					state = (miState*)orig_state;
+				}
 			if(amb_add)	ccg_color_multiply(&passes[LAYER_combined], &passes[LAYER_ao], &passes[LAYER_combined]);
 			if(whichlayer==LAYER_ao){
 				ccg_color_assign(result, &passes[LAYER_ao]);
@@ -1004,13 +1008,18 @@ extern "C" DLLEXPORT miBoolean ccg_base_blinn(
 		//PASS: reflection occlusion
 		if(whichlayer == LAYER_reflao || (amb_add && whichlayer == LAYER_combined))
 		{
-			passes[LAYER_reflao] = *ccg_mi_eval_color(state, &paras->reflectOcclusion);
+			orig_state = state;
+			state_copy = *orig_state;
+			state = &state_copy;
+			passes[LAYER_reflao] = *mi_eval_color(&paras->reflectOcclusion);
+			state = (miState*)orig_state;
 			if(amb_add)	ccg_color_multiply(&passes[LAYER_refl], &passes[LAYER_reflao], &passes[LAYER_refl]);
 			if(whichlayer==LAYER_reflao){
 				ccg_color_assign(result, &passes[LAYER_reflao]);
 				return(miTRUE);
 			}
 		}
+		*/
 
 		//r
 		passes[LAYER_combined].r *= itransp.r;
@@ -1832,7 +1841,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_blinn(
 							tmpInt = mystate->raystate;
 							mi_reflection_dir(&dir, state);
 							mystate->raystate = LAYER_combined;
-							if(mi_trace_reflection(&tempColor, state, &dir)) ccg_color_multiply(&tempColor, reflecti, &passesCombined[LAYER_refl]);
+							if(mi_trace_reflection(&tempColor, state, &dir) && (state->child && state->child->dist>0.0f)) ccg_color_multiply(&tempColor, reflecti, &passesCombined[LAYER_refl]);
 							else if(!ccg_color_compare(reflected, &ccg_solid_black)) ccg_color_multiply(reflected, reflecti, &passesCombined[LAYER_refl]);
 								else if(mi_trace_environment(&tempColor, state, &dir)) ccg_color_multiply(&tempColor, reflecti, &passesCombined[LAYER_refl]);
 							if(state->type==miRAY_EYE)	mystate->raystate = LAYER_RAY;
@@ -1976,25 +1985,37 @@ extern "C" DLLEXPORT miBoolean ccg_base_blinn(
 				passesCombined[LAYER_combined].g = passesCombined[LAYER_col].g * (passesCombined[LAYER_diff].g + passesCombined[LAYER_ambi].g);
 				passesCombined[LAYER_combined].b = passesCombined[LAYER_col].b * (passesCombined[LAYER_diff].b + passesCombined[LAYER_ambi].b);
 
+				/*
 				//PASS: ambient and reflect occlusion
 				if(state->type == miRAY_EYE)
 				{
-					amb_add = *mi_eval_boolean(&paras->add_to_combined);
+					miBoolean amb_add = *mi_eval_boolean(&paras->add_to_combined);
 					if(bent_normal.a!=-1) ccg_color_init(&passes[LAYER_ao], bent_normal.a);
-					else passes[LAYER_ao] = *ccg_mi_eval_color(state, &paras->ambientOcclusion);
+					else {
+							orig_state = state;
+							state_copy = *orig_state;
+							state = &state_copy;
+							passes[LAYER_ao] = *mi_eval_color(&paras->ambientOcclusion);
+							state = (miState*)orig_state;
+						}
 					if((*fbarray)->passfbArray[LAYER_ao] && framebuffers->get_index(ccg_get_pass_name(buffer_name,LAYER_ao), buffer_index))
 					{
 						mi_fb_put(state, buffer_index, &passes[LAYER_ao]);
 					}
 					if(amb_add)	ccg_color_multiply(&passesCombined[LAYER_combined], &passes[LAYER_ao], &passesCombined[LAYER_combined]);
 
-					passes[LAYER_reflao] = *ccg_mi_eval_color(state, &paras->reflectOcclusion);
+					orig_state = state;
+					state_copy = *orig_state;
+					state = &state_copy;
+					passes[LAYER_reflao] = *mi_eval_color(&paras->reflectOcclusion);
+					state = (miState*)orig_state;
 					if((*fbarray)->passfbArray[LAYER_reflao] && framebuffers->get_index(ccg_get_pass_name(buffer_name,LAYER_reflao), buffer_index))
 					{
 						mi_fb_put(state, buffer_index, &passes[LAYER_reflao]);
 					}
 					if(amb_add)	ccg_color_multiply(&passesCombined[LAYER_refl], &passes[LAYER_reflao], &passesCombined[LAYER_refl]);
 				}
+				*/
 
 				//r
 				passesCombined[LAYER_combined].r *= itransp.r;

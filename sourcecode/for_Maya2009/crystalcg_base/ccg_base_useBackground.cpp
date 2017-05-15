@@ -164,7 +164,7 @@ extern "C" DLLEXPORT miBoolean ccg_base_useBackground(
 
 	if (state->type == miRAY_SHADOW)
 	{
-		result->r = result->g = result->b = result->a = 1;
+		result->r = result->g = result->b = result->a = 0;
 		return(miFALSE);
 	}
 

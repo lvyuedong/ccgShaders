@@ -35,7 +35,7 @@ extern "C" DLLEXPORT miBoolean ccg_geo_framebuffer(
 	miOptions	*opt = (miOptions *)state->options;
 	miCamera 	*cam = (miCamera *)state->camera;
 	miInteger	fb_no;
-	char		*type, *filename, *fullname, *directory, *dirTemp, *imagename;
+	char		*type, *filename, *fullname;
 	char		pad[10], spec[5], *ext, *tmp, *fbstr;
 	char		token[LAYER_NUM][30], *passes[LAYER_NUM];
 	int			passesfb[LAYER_NUM];
@@ -55,20 +55,20 @@ extern "C" DLLEXPORT miBoolean ccg_geo_framebuffer(
 		}
 
 	//whether the file path exists
-	dirTemp = (char *)mi_mem_allocate( sizeof(char)*int(strlen(filename)) );
-	ccg_F_getDirectory(filename, dirTemp);
-	directory = (char *)mi_mem_allocate( sizeof(char)*int(strlen(dirTemp)) );
-	strcpy(directory, dirTemp);
-	mi_mem_release(dirTemp);
-	if(!ccg_F_fileOrDir_exists(directory)) {
-		mi_mem_release(directory);
+	char *directory, *imagename, *pos;
+	pos = NULL;
+	int lastOf = 0;
+	pos = ccg_F_lastOfSlash(filename, &lastOf);
+	if(lastOf==0 || !pos){
 		mi_mem_release(filename);
-		mi_error("The image directory doesn't exists!");
+		mi_error("Please set the right filename for ccg_geo_framebuffer shader.");
 		return miFALSE;
 	}
-	//get image name
-	imagename = (char *)mi_mem_allocate( sizeof(char)*int(strlen(filename)-strlen(directory)) );
-	ccg_F_getFilename(filename, imagename);
+	int filenameLen = int(strlen(filename));
+	imagename = (char *)mi_mem_allocate(sizeof(char)*(lastOf+1));
+	directory = (char *)mi_mem_allocate(sizeof(char)*(filenameLen - lastOf + 1));
+	strncpy(imagename, pos, lastOf);
+	strncpy(directory, filename, (filenameLen-lastOf));
 
 	//Get file format
 	i = *mi_eval_integer(&paras->format);
@@ -173,7 +173,6 @@ extern "C" DLLEXPORT miBoolean ccg_geo_framebuffer(
 	//	framebuffers->set(glow, mi_mem_strdup("filetype"), (const char*)ext);
 	//	mi_mem_release(glow);
 	//}
-
 
 	miBoolean enableSubDir = *mi_eval_boolean(&paras->enableSubFolder);
 

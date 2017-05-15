@@ -1,0 +1,41 @@
+declare shader
+	color "ccg_fakefur" (
+		color "skinColor",            #: default 0.23 0.17 0.13
+		color "hairColor",         		#: default 0.5 0.5 0.5
+		color "incandescence",				#: default 0 0 0
+		vector "normalMapping",			      
+		
+		color "specular1Color",       #: default 0.95 0.85 0.85
+		scalar "specular1Exponent",   #: default 30 min 1 max 1500
+		color "specular2Color",       #: default 0.60 0.50 0.30
+		scalar "specular2Exponent",   #: default 30 min 1 max 1500
+		color	"specular3Color",				#: default 0.95 0.85 0.85
+	  scalar "specularPower",				#: default 20 min 0 max 200
+	  scalar "hairDirection",				#: default 0 min 0 max 360
+	  integer "specularMode",				#: enum "Kajiya:Goldman:Kajiya + Goldman Specular:Goldman + Kajiya Specular" default 2
+	  
+		scalar "hairDensity",         #: default 100 softmin 1 softmax 1000
+		scalar "backwardScattering",   #: default 0.70 min 0 max 1 	
+    scalar "forwardScattering",   #: default 0.30 min 0 max 1 	
+		scalar "hairOverHairShadow",  #: default 1 min 0 max 1  	
+		scalar "shadowAttenuation",   #: default 0.50 min 0 max 1  	
+		scalar "startShadowCos",      #: default 0.3 min 0 max 1  	
+		scalar "endShadowCos",        #: default 1.0 min 0 max 1  	
+		scalar "hairLength",          #: default 0.15 min 0 max 1   	
+		scalar "hairBaseRadius",      #: default 0.01 min 0 max 1   	
+		scalar "hairTipRadius",       #: default 0.00 min 0 max 1
+		
+		color		"skinSpecularColor",	#: default 0.23 0.17 0.13
+    scalar	"eccentricity",			#: default 0.35 min 0	max 0.999999
+    scalar	"specularRolloff",		#: default 0.35 min 0 max 1
+    boolean	"disableSkinSpecular",   #: default on
+    boolean "directBlinnSpecular",	#: default off
+
+		boolean	"surface",   					#: default on
+							      					      					      
+		integer	"mode",       	      #: default 4					      
+		array light "lights"
+		  )
+	version 1
+	apply material
+end declare

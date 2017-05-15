@@ -207,7 +207,7 @@ miBoolean ccg_geo_ibl_pointHalf(int sky, miVector *c, miVector *p, miVector *d)
 
 	if(sky==1)
 	{
-		if(d->y<=0) return miTRUE;
+		if(d->y<=0) return miTRUE;			
 		else return miFALSE;
 	}else if(sky==2)
 		{

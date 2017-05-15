@@ -15,6 +15,7 @@ struct ccg_base_surface {
 	miInteger	layer;
 	miBoolean	passesInOnce;
 	miTag		fbWriteString;
+	miBoolean	disableShadowChain;
 };
 
 extern "C" DLLEXPORT void ccg_base_surface_init(      /* init shader */
@@ -86,31 +87,26 @@ extern "C" DLLEXPORT miBoolean ccg_base_surface(
 
 	if (state->type == miRAY_SHADOW)
 	{
-		if(state->options->shadow=='s')
-  		{
-			if(!ccg_color_compare(transp, &ccg_trans_black))
-			{
-				ccg_shadow_choose_volume(state);
-				mi_trace_shadow_seg(result, state);
-				result->r *= transp->r;
-				result->g *= transp->g;
-  				result->b *= transp->b;
-				result->a *= transp->a;
-				return(miTRUE);
-			}else {
-					result->r = result->g = result->b = result->a = 1;
-					return(miFALSE);
-				  }
-		}
 		if(!ccg_color_compare(transp, &ccg_trans_black))
-  		{
-			result->r *= transp->r;
-			result->g *= transp->g;
-  			result->b *= transp->b;
-			result->a *= transp->a;
-  			return(miTRUE);
-  		}else {
-				result->r = result->g = result->b = result->a = 1;
+		{
+			if(*mi_eval_boolean(&paras->disableShadowChain)){
+				result->r = transp->r;
+				result->g = transp->g;
+				result->b = transp->b;
+				result->a = transp->a;
+			}else {
+						if(state->options->shadow=='s'){
+							ccg_shadow_choose_volume(state);
+							mi_trace_shadow_seg(result, state);
+						}
+						result->r *= transp->r;
+						result->g *= transp->g;
+						result->b *= transp->b;
+						result->a *= transp->a;
+				  }
+			return(miTRUE);
+		}else {
+				result->r = result->g = result->b = result->a = 0;
 				return(miFALSE);
 			  }
 	}
